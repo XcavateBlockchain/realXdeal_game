@@ -404,6 +404,7 @@ impl pallet_sudo::Config for Runtime {
 parameter_types! {
 	pub const GamePalletId: PalletId = PalletId(*b"py/rlxdl");
 	pub const MaxProperties: u32 = 100;
+	pub const MaxOngoingGame: u32 = 200;
 }
 
 /// Configure the pallet-game in pallets/game.
@@ -415,6 +416,7 @@ impl pallet_game::Config for Runtime {
 	type ItemId = u32;
 	type MaxProperty = MaxProperties;
 	type PalletId = GamePalletId;
+	type MaxOngoingGames = MaxOngoingGame;
 }
 
 parameter_types! {

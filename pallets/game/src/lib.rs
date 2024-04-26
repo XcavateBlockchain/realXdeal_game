@@ -26,13 +26,17 @@ use frame_support::{
 	PalletId,
 };
 
-use frame_support::sp_runtime::traits::AccountIdConversion;
+use frame_support::sp_runtime::{
+	traits::AccountIdConversion, Saturating,
+};
 
 use pallet_nfts::{
 	CollectionConfig, CollectionSetting, CollectionSettings, ItemConfig, ItemSettings, MintSettings,
 };
 
 use enumflags2::BitFlags;
+
+use frame_support::traits::Randomness;
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -61,7 +65,10 @@ pub mod pallet {
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config + pallet_nfts::Config {
+	pub trait Config: frame_system::Config 
+		+ pallet_nfts::Config 
+		+ pallet_babe::Config 
+	{
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
 		/// Type representing the weight of this pallet
@@ -90,6 +97,9 @@ pub mod pallet {
 		/// The marketplace's pallet id, used for deriving its sovereign account ID.
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
+		/// The maximum amount of games that can be played at the same time.
+		#[pallet::constant]
+		type MaxOngoingGames: Get<u32>;
 	}
 
 	pub type CollectionId<T> = <T as Config>::CollectionId;
@@ -105,10 +115,33 @@ pub mod pallet {
 		pub data: BoundedVec<u8, T::MaxProperty>,
 	}
 
+	/// Game Data.
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct GameData<T: Config> {
+		pub difficulty: DifficultyLevel,
+		pub player: AccountIdOf<T>,
+	}
+
+	#[pallet::storage]
+	#[pallet::getter(fn stored_hash)]
+	pub type StoredHash<T: Config> =
+		StorageValue<_, Option<T::Hash>, OptionQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn stored_number)]
+	pub type StoredNumber<T: Config> =
+		StorageValue<_, u32, OptionQuery>;
+
 	#[pallet::storage]
 	#[pallet::getter(fn next_color_id)]
 	pub(super) type NextColorId<T: Config> =
 		StorageMap<_, Blake2_128Concat, <T as pallet::Config>::CollectionId, u32, ValueQuery>;
+	
+	#[pallet::storage]
+	#[pallet::getter(fn game_id)]
+	pub type GameId<T> = StorageValue<_, u32, ValueQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn player_points)]
@@ -128,6 +161,26 @@ pub mod pallet {
 		ValueQuery
 	>;
 
+	#[pallet::storage]
+	#[pallet::getter(fn game_info)]
+	pub type GameInfo<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		u32,
+		GameData<T>,
+		OptionQuery,
+	>;
+
+	/// Stores the project keys and round types ending on a given block.
+	#[pallet::storage]
+	pub type GamesExpiring<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		BlockNumberFor<T>,
+		BoundedVec<u32, T::MaxOngoingGames>,
+		ValueQuery,
+	>;
+
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/main-docs/build/events-errors/
 	#[pallet::event]
@@ -143,13 +196,29 @@ pub mod pallet {
 	pub enum Error<T> {
 		/// A player has not enough points to play.
 		NotEnoughPoints,
+		ConversionError,
+		ArithmeticOverflow,
+		/// There are too many games active.
+		TooManyGames,
+		/// This is not an active game.
+		NoAcitveGame,
+		/// The caller has no permission.
+		NoThePlayer,
 	}
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
 		fn on_initialize(n: frame_system::pallet_prelude::BlockNumberFor<T>) -> Weight {
 			let mut weight = T::DbWeight::get().reads_writes(1, 1);
+			let ended_games = GamesExpiring::<T>::take(n);
 
+			// Checks if there is a voting for a loan expiring in this block.
+			ended_games.iter().for_each(|index| {
+				weight = weight.saturating_add(T::DbWeight::get().reads_writes(1, 1));
+				let voting_result = <GameInfo<T>>::take(index);
+				todo!();
+				///check for result.
+			});
 			weight
 		}
 	}
@@ -163,21 +232,72 @@ pub mod pallet {
 		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
 		#[pallet::call_index(0)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::do_something())]
-		pub fn play_game(origin: OriginFor<T>, game_type: DifficultyLevel) -> DispatchResult {
+		pub fn play_game(origin: OriginFor<T>, game_type: DifficultyLevel, rand: u8) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
-			Self::check_enough_points(signer, game_type)?;
-
+			Self::check_enough_points(signer, game_type.clone())?;
+			let mut game_id = Self::game_id();
+			let (hashi, _) = pallet_babe::ParentBlockRandomness::<T>::random(&[rand]);
+            StoredHash::<T>::put(hashi);
+			let u32_value = u32::from_le_bytes(
+                hashi.unwrap().as_ref()[4..8]
+                    .try_into()
+                    .map_err(|_| Error::<T>::ConversionError)?
+            );
+			StoredNumber::<T>::put(u32_value);
+			if game_type == DifficultyLevel::Player {
+				let current_block_number = <frame_system::Pallet<T>>::block_number();
+				let expiry_block =
+					current_block_number.saturating_add(8u32.into());
+	
+				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
+					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
+					Ok::<(), DispatchError>(())
+				})?;
+			} else if game_type == DifficultyLevel::Pro {
+				let current_block_number = <frame_system::Pallet<T>>::block_number();
+				let expiry_block =
+				current_block_number.saturating_add(5u32.into());
+	
+				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
+					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
+					Ok::<(), DispatchError>(())
+				})?;
+			} else {
+				let current_block_number = <frame_system::Pallet<T>>::block_number();
+				let expiry_block =
+				current_block_number.saturating_add(10u32.into());
+	
+				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
+					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
+					Ok::<(), DispatchError>(())
+				})?;
+			}
 			/// Call crust or oracle to chose a property for a game
 			todo!();
-
+			let game_datas = GameData {
+				difficulty: game_type,
+				player: signer,
+			};
+			GameInfo::<T>::insert(game_id, game_datas);
+			game_id = game_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+			GameId::<T>::put(game_id);
 			Ok(())
 		}
 
 		#[pallet::call_index(1)]
 		#[pallet::weight(0)]
+		pub fn give_answer(origin: OriginFor<T>, game_id: u32) -> DispatchResult {
+			let signer = ensure_signed(origin)?;
+			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
+			ensure!(signer == game_info.account, Error::<T>::NoThePlayer);
+			
+		}
+
+		#[pallet::call_index(2)]
+		#[pallet::weight(0)]
 		pub fn setup_game(origin: OriginFor<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
-			for x in 0..8 {
+			for _x in 0..8 {
 				if pallet_nfts::NextCollectionId::<T>::get().is_none() {
 					pallet_nfts::NextCollectionId::<T>::set(
 						<T as pallet_nfts::Config>::CollectionId::initial_value(),
@@ -204,7 +324,6 @@ pub mod pallet {
 			}
 			Ok(())
 		}
-
 	}
 
 
