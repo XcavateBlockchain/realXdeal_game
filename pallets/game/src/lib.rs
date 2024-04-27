@@ -93,7 +93,10 @@ pub mod pallet {
 			+ Encode;
 		/// The maximum amount of properties.
 		#[pallet::constant]
-		type MaxProperty: Get<u32>;
+		type MaxProperty: Get<u32>
+			+ Clone
+			+ PartialEq
+			+ Eq;
 		/// The marketplace's pallet id, used for deriving its sovereign account ID.
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
@@ -109,9 +112,8 @@ pub mod pallet {
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
-	pub struct PropertyData<ItemId, CollectionId, T: Config> {
+	pub struct PropertyData<CollectionId, T: Config> {
 		pub collection_id: CollectionId,
-		pub item_id: ItemId,
 		pub data: BoundedVec<u8, T::MaxProperty>,
 	}
 
@@ -119,9 +121,10 @@ pub mod pallet {
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
-	pub struct GameData<T: Config> {
+	pub struct GameData<CollectionId, T: Config> {
 		pub difficulty: DifficultyLevel,
 		pub player: AccountIdOf<T>,
+		pub property: PropertyData<CollectionId, T>,
 	}
 
 	#[pallet::storage]
@@ -150,15 +153,7 @@ pub mod pallet {
 		Blake2_128Concat, 
 		AccountIdOf<T>, 
 		u32, 
-		OptionQuery,
-	>;
-
-	#[pallet::storage]
-	#[pallet::getter(fn properties)]
-	pub type Properties<T: Config> = StorageValue<
-		_,
-		BoundedVec<PropertyData<<T as pallet::Config>::ItemId, <T as pallet::Config>::CollectionId, T>, T::MaxProperty>, 
-		ValueQuery
+		ValueQuery,
 	>;
 
 	#[pallet::storage]
@@ -167,7 +162,7 @@ pub mod pallet {
 		_,
 		Blake2_128Concat,
 		u32,
-		GameData<T>,
+		GameData<<T as pallet::Config>::CollectionId, T>,
 		OptionQuery,
 	>;
 
@@ -198,12 +193,17 @@ pub mod pallet {
 		NotEnoughPoints,
 		ConversionError,
 		ArithmeticOverflow,
+		ArithmeticUnderflow,
+		MultiplyError,
+		DivisionError,
 		/// There are too many games active.
 		TooManyGames,
 		/// This is not an active game.
 		NoAcitveGame,
 		/// The caller has no permission.
 		NoThePlayer,
+		/// This game is not active.
+		NoActiveGame,
 	}
 
 	#[pallet::hooks]
@@ -215,9 +215,12 @@ pub mod pallet {
 			// Checks if there is a voting for a loan expiring in this block.
 			ended_games.iter().for_each(|index| {
 				weight = weight.saturating_add(T::DbWeight::get().reads_writes(1, 1));
-				let voting_result = <GameInfo<T>>::take(index);
-				todo!();
+				let game_info = <GameInfo<T>>::take(index);
+				if let Some(game_info) = game_info {
+					let _ = Self::NoAnswerResult(game_info);
+				}
 				///check for result.
+				todo!();
 			});
 			weight
 		}
@@ -274,9 +277,15 @@ pub mod pallet {
 			}
 			/// Call crust or oracle to chose a property for a game
 			todo!();
+			let random_number = u32_value % 8;
+			let property = PropertyData {
+				collection_id: random_number.into(),
+				data: Default::default(),
+			};
 			let game_datas = GameData {
 				difficulty: game_type,
 				player: signer,
+				property,
 			};
 			GameInfo::<T>::insert(game_id, game_datas);
 			game_id = game_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
@@ -286,11 +295,16 @@ pub mod pallet {
 
 		#[pallet::call_index(1)]
 		#[pallet::weight(0)]
-		pub fn give_answer(origin: OriginFor<T>, game_id: u32) -> DispatchResult {
+		pub fn submit_answer(origin: OriginFor<T>, guess: u32, game_id: u32) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
 			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
-			ensure!(signer == game_info.account, Error::<T>::NoThePlayer);
-			
+			ensure!(signer == game_info.player, Error::<T>::NoThePlayer);
+			let result: u32 = 100_000;
+			let difference_value = ((result as i32).checked_sub(guess as i32).ok_or(Error::<T>::ArithmeticUnderflow)?)
+				.checked_mul(1000).ok_or(Error::<T>::MultiplyError)?
+				.checked_div(result as i32).ok_or(Error::<T>::DivisionError)?;
+			Self::check_result(difference_value.try_into().unwrap(), game_id)?;
+			Ok(())
 		}
 
 		#[pallet::call_index(2)]
@@ -339,10 +353,147 @@ pub mod pallet {
 			game_type: DifficultyLevel
 		) -> DispatchResult {
 			if game_type == DifficultyLevel::Pro {
-				ensure!(Self::player_points(signer) >= Some(50), Error::<T>::NotEnoughPoints);
+				ensure!(Self::player_points(signer) >= 50, Error::<T>::NotEnoughPoints);
 			} else if game_type == DifficultyLevel::Player {
-				ensure!(Self::player_points(signer) >= Some(25), Error::<T>::NotEnoughPoints);
+				ensure!(Self::player_points(signer) >= 25, Error::<T>::NotEnoughPoints);
 			} 
+			Ok(())
+		}
+
+ 		fn check_result(
+			difference: u16,
+			game_id: u32,
+		) -> DispatchResult {
+			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoAcitveGame)?;
+			if game_info.difficulty == DifficultyLevel::Pro {
+				match difference {
+					0..=10 => {
+						let mut next_item_id = Self::next_color_id(game_info.property.collection_id);
+						let item_id: ItemId<T> = next_item_id.into();
+						let next_item_id = next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+						NextColorId::<T>::insert(game_info.property.collection_id, next_item_id);
+						pallet_nfts::Pallet::<T>::do_mint(
+							game_info.property.collection_id.into(),
+							item_id.into(),
+							Some(Self::account_id()),
+							game_info.player.clone(),
+							Self::default_item_config(),
+							|_, _| Ok(()),
+						)?;
+					}
+					11..=30 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_add(50).ok_or(Error::<T>::ArithmeticOverflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					} 
+					31..=50 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_add(30).ok_or(Error::<T>::ArithmeticOverflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					} 
+					51..=100 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_add(10).ok_or(Error::<T>::ArithmeticOverflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					101..=150 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					151..=200 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					201..=250 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(30).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					251..=300 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(40).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					_ => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+				}
+			}
+			else if game_info.difficulty == DifficultyLevel::Player {
+				match difference {
+					0..=10 => {
+						let mut next_item_id = Self::next_color_id(game_info.property.collection_id);
+						let item_id: ItemId<T> = next_item_id.into();
+						let next_item_id = next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+						NextColorId::<T>::insert(game_info.property.collection_id, next_item_id);
+						pallet_nfts::Pallet::<T>::do_mint(
+							game_info.property.collection_id.into(),
+							item_id.into(),
+							Some(Self::account_id()),
+							game_info.player,
+							Self::default_item_config(),
+							|_, _| Ok(()),
+						)?;
+					}
+					11..=30 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_add(25).ok_or(Error::<T>::ArithmeticOverflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					} 
+					31..=50 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_add(15).ok_or(Error::<T>::ArithmeticOverflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					} 
+					51..=100 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_add(5).ok_or(Error::<T>::ArithmeticOverflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					101..=150 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(5).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					151..=200 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					201..=250 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(15).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					251..=300 => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+					}
+					_ => {
+						let mut points = Self::player_points(game_info.player.clone());
+						points = points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						PlayerPoints::<T>::insert(game_info.player, points);
+					}
+				}
+			}
+			Ok(())
+		} 
+
+		fn NoAnswerResult(game_info: GameData<<T as pallet::Config>::CollectionId, T>) -> DispatchResult {
+			if game_info.difficulty == DifficultyLevel::Pro {
+				let mut points = Self::player_points(game_info.player.clone());
+				points = points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				PlayerPoints::<T>::insert(game_info.player, points);
+			} else if game_info.difficulty == DifficultyLevel::Player {
+				let mut points = Self::player_points(game_info.player.clone());
+				points = points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				PlayerPoints::<T>::insert(game_info.player, points);
+			}
 			Ok(())
 		}
 
@@ -369,6 +520,11 @@ pub mod pallet {
 				max_supply: None,
 				mint_settings: MintSettings::default(),
 			}
+		}
+
+		/// Set the default item configuration for minting a nft.
+		fn default_item_config() -> ItemConfig {
+			ItemConfig { settings: ItemSettings::all_enabled() }
 		}
 	}
 }

@@ -401,10 +401,19 @@ impl pallet_sudo::Config for Runtime {
 	type WeightInfo = pallet_sudo::weights::SubstrateWeight<Runtime>; // FIXME
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct MaxProperties;
+
+impl sp_core::Get<u32> for MaxProperties {
+    fn get() -> u32 {
+        100 
+    }
+}
+
+// Define the parameter types using the custom struct
 parameter_types! {
-	pub const GamePalletId: PalletId = PalletId(*b"py/rlxdl");
-	pub const MaxProperties: u32 = 100;
-	pub const MaxOngoingGame: u32 = 200;
+    pub const GamePalletId: PalletId = PalletId(*b"py/rlxdl");
+    pub const MaxOngoingGame: u32 = 200;
 }
 
 /// Configure the pallet-game in pallets/game.
