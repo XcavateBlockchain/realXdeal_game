@@ -27,7 +27,7 @@ use frame_support::{
 };
 
 use frame_support::sp_runtime::{
-	traits::AccountIdConversion, Saturating,
+	traits::{AccountIdConversion, StaticLookup}, Saturating,
 };
 
 use pallet_nfts::{
@@ -56,11 +56,59 @@ pub mod pallet {
 		Pro,
 	}
 
+	/// Offer enum.
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	pub enum Offer {
+		Accept,
+		Reject,
+	}
+
 	/// AccountId storage.
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	pub struct PalletIdStorage<T: Config> {
 		pallet_id: AccountIdOf<T>,
+	}
+
+	/// Property Data.
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct PropertyData<CollectionId, T: Config> {
+		pub collection_id: CollectionId,
+		pub data: BoundedVec<u8, T::MaxProperty>,
+	}
+
+	/// Game Data.
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct GameData<CollectionId, T: Config> {
+		pub difficulty: DifficultyLevel,
+		pub player: AccountIdOf<T>,
+		pub property: PropertyData<CollectionId, T>,
+	}
+
+	/// Listing infos of a NFT.
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct ListingInfo<CollectionId, ItemId, T: Config> {
+		pub owner: AccountIdOf<T>,
+		pub collection_id: CollectionId,
+		pub item_id: ItemId,
+	}
+
+	/// Offer infos of a listing.
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct OfferInfo<CollectionId, ItemId, T: Config> {
+		pub owner: AccountIdOf<T>,
+		pub listing_id: u32,
+		pub collection_id: CollectionId,
+		pub item_id: ItemId,
 	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
@@ -108,25 +156,6 @@ pub mod pallet {
 	pub type CollectionId<T> = <T as Config>::CollectionId;
 	pub type ItemId<T> = <T as Config>::ItemId;
 
-	/// Property Data.
-	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
-	#[scale_info(skip_type_params(T))]
-	pub struct PropertyData<CollectionId, T: Config> {
-		pub collection_id: CollectionId,
-		pub data: BoundedVec<u8, T::MaxProperty>,
-	}
-
-	/// Game Data.
-	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
-	#[scale_info(skip_type_params(T))]
-	pub struct GameData<CollectionId, T: Config> {
-		pub difficulty: DifficultyLevel,
-		pub player: AccountIdOf<T>,
-		pub property: PropertyData<CollectionId, T>,
-	}
-
 	#[pallet::storage]
 	#[pallet::getter(fn stored_hash)]
 	pub type StoredHash<T: Config> =
@@ -141,6 +170,16 @@ pub mod pallet {
 	#[pallet::getter(fn next_color_id)]
 	pub(super) type NextColorId<T: Config> =
 		StorageMap<_, Blake2_128Concat, <T as pallet::Config>::CollectionId, u32, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn next_lising_id)]
+	pub(super) type NextListingId<T> = 
+		StorageValue<_, u32, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn next_offer_id)]
+	pub(super) type NextOfferId<T> = 
+		StorageValue<_, u32, ValueQuery>;
 	
 	#[pallet::storage]
 	#[pallet::getter(fn game_id)]
@@ -163,6 +202,26 @@ pub mod pallet {
 		Blake2_128Concat,
 		u32,
 		GameData<<T as pallet::Config>::CollectionId, T>,
+		OptionQuery,
+	>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn listings)]
+	pub type Listings<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		u32,
+		ListingInfo<<T as pallet::Config>::CollectionId, <T as pallet::Config>::ItemId, T>,
+		OptionQuery,
+	>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn offers)]
+	pub type Offers<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		u32,
+		OfferInfo<<T as pallet::Config>::CollectionId, <T as pallet::Config>::ItemId, T>,
 		OptionQuery,
 	>;
 
@@ -204,6 +263,11 @@ pub mod pallet {
 		NoThePlayer,
 		/// This game is not active.
 		NoActiveGame,
+		NoPermission,
+		/// This listing is not listed.
+		ListingDoesNotExist,
+		/// This offer does not exist.
+		OfferDoesNotExist,
 	}
 
 	#[pallet::hooks]
@@ -307,6 +371,92 @@ pub mod pallet {
 			Ok(())
 		}
 
+		
+		#[pallet::call_index(3)]
+		#[pallet::weight(0)]
+		pub fn list_nft(origin: OriginFor<T>, collection_id: CollectionId<T>, item_id: ItemId<T>) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
+			pallet_nfts::Pallet::<T>::transfer(origin, collection_id.into(), item_id.into(), pallet_lookup)?;
+			let listing_info = ListingInfo {
+				owner: signer,
+				collection_id,
+				item_id,
+			};
+			let mut listing_id = Self::next_lising_id();
+			Listings::<T>::insert(listing_id, listing_info);
+			listing_id = listing_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+			NextListingId::<T>::put(listing_id);
+			Ok(())
+		}
+
+		#[pallet::call_index(4)]
+		#[pallet::weight(0)]
+		pub fn delist_nft(origin: OriginFor<T>, listing_id: u32) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			let listing_info = Listings::<T>::take(listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			ensure!(listing_info.owner == signer, Error::<T>::NoPermission);
+			pallet_nfts::Pallet::<T>::do_transfer(
+				listing_info.collection_id.into(),
+				listing_info.item_id.into(),
+				signer.clone(),
+				|_, _| Ok(()),
+			)?;
+			Ok(())
+		}
+
+		#[pallet::call_index(5)]
+		#[pallet::weight(0)]
+		pub fn make_offer(origin: OriginFor<T>, listing_id: u32, collection_id: CollectionId<T>, item_id: ItemId<T>) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			ensure!(Self::listings(listing_id).is_some(), Error::<T>::ListingDoesNotExist);
+			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
+			pallet_nfts::Pallet::<T>::transfer(origin, collection_id.into(), item_id.into(), pallet_lookup)?;
+			let offer_info = OfferInfo {
+				owner: signer,
+				listing_id,
+				collection_id,
+				item_id,
+			};
+			let mut offer_id = Self::next_offer_id();
+			Offers::<T>::insert(offer_id, offer_info);
+			let offer_id = offer_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+			NextOfferId::<T>::put(offer_id);
+			Ok(())
+		}
+
+		#[pallet::call_index(6)]
+		#[pallet::weight(0)]
+		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
+			let listing_details = Self::listings(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			ensure!(listing_details.owner == signer, Error::<T>::NoPermission);
+			if offer == Offer::Accept {
+				pallet_nfts::Pallet::<T>::do_transfer(
+					listing_details.collection_id.into(),
+					listing_details.item_id.into(),
+					offer_details.owner,
+					|_, _| Ok(()),
+				)?;
+				pallet_nfts::Pallet::<T>::do_transfer(
+					offer_details.collection_id.into(),
+					offer_details.item_id.into(),
+					listing_details.owner,
+					|_, _| Ok(()),
+				)?;
+				Listings::<T>::take(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			} else {
+				pallet_nfts::Pallet::<T>::do_transfer(
+					offer_details.collection_id.into(),
+					offer_details.item_id.into(),
+					offer_details.owner,
+					|_, _| Ok(()),
+				)?;
+			}
+			Ok(())
+		}
+
 		#[pallet::call_index(2)]
 		#[pallet::weight(0)]
 		pub fn setup_game(origin: OriginFor<T>) -> DispatchResult {
@@ -338,6 +488,7 @@ pub mod pallet {
 			}
 			Ok(())
 		}
+
 	}
 
 
