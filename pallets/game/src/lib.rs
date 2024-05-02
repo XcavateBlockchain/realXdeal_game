@@ -16,18 +16,21 @@ mod benchmarking;
 pub mod weights;
 pub use weights::*;
 
+pub mod properties;
+
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
 type BalanceOf<T> = <<T as pallet_nfts::Config>::Currency as Currency<
 	<T as frame_system::Config>::AccountId,
 >>::Balance;
 
 use frame_support::{
-	traits::{Incrementable, Currency},
+	traits::{Currency, Incrementable},
 	PalletId,
 };
 
 use frame_support::sp_runtime::{
-	traits::{AccountIdConversion, StaticLookup}, Saturating,
+	traits::{AccountIdConversion, StaticLookup},
+	Saturating,
 };
 
 use pallet_nfts::{
@@ -71,23 +74,14 @@ pub mod pallet {
 		pallet_id: AccountIdOf<T>,
 	}
 
-	/// Property Data.
-	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
-	#[scale_info(skip_type_params(T))]
-	pub struct PropertyData<CollectionId, T: Config> {
-		pub collection_id: CollectionId,
-		pub data: BoundedVec<u8, T::MaxProperty>,
-	}
-
 	/// Game Data.
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
-	pub struct GameData<CollectionId, T: Config> {
+	pub struct GameData<T: Config> {
 		pub difficulty: DifficultyLevel,
 		pub player: AccountIdOf<T>,
-		pub property: PropertyData<CollectionId, T>,
+		pub property: PropertyInfoData<T>,
 	}
 
 	/// Listing infos of a NFT.
@@ -111,11 +105,22 @@ pub mod pallet {
 		pub item_id: ItemId,
 	}
 
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct PropertyInfoData<T: Config> {
+		pub id: u32,
+		pub propertyType: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub bedrooms: u32,
+		pub bathrooms: u32,
+		pub city: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub postCode: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub keyFeatures: BoundedVec<u8, <T as Config>::StringLimit>,
+	}
+
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config 
-		+ pallet_nfts::Config 
-		+ pallet_babe::Config 
+	pub trait Config: frame_system::Config + pallet_nfts::Config //+ pallet_babe::Config
 	{
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -141,16 +146,18 @@ pub mod pallet {
 			+ Encode;
 		/// The maximum amount of properties.
 		#[pallet::constant]
-		type MaxProperty: Get<u32>
-			+ Clone
-			+ PartialEq
-			+ Eq;
+		type MaxProperty: Get<u32> + Clone + PartialEq + Eq;
 		/// The marketplace's pallet id, used for deriving its sovereign account ID.
 		#[pallet::constant]
 		type PalletId: Get<PalletId>;
 		/// The maximum amount of games that can be played at the same time.
 		#[pallet::constant]
 		type MaxOngoingGames: Get<u32>;
+		/// Randomness used for choosing a random property.
+		type GameRandomness: Randomness<Self::Hash, BlockNumberFor<Self>>;
+		/// The maximum length of data stored in string.
+		#[pallet::constant]
+		type StringLimit: Get<u32>;
 	}
 
 	pub type CollectionId<T> = <T as Config>::CollectionId;
@@ -158,13 +165,7 @@ pub mod pallet {
 
 	#[pallet::storage]
 	#[pallet::getter(fn stored_hash)]
-	pub type StoredHash<T: Config> =
-		StorageValue<_, Option<T::Hash>, OptionQuery>;
-
-	#[pallet::storage]
-	#[pallet::getter(fn stored_number)]
-	pub type StoredNumber<T: Config> =
-		StorageValue<_, u32, OptionQuery>;
+	pub type StoredHash<T: Config> = StorageValue<_, T::Hash, OptionQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn next_color_id)]
@@ -173,27 +174,19 @@ pub mod pallet {
 
 	#[pallet::storage]
 	#[pallet::getter(fn next_lising_id)]
-	pub(super) type NextListingId<T> = 
-		StorageValue<_, u32, ValueQuery>;
+	pub(super) type NextListingId<T> = StorageValue<_, u32, ValueQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn next_offer_id)]
-	pub(super) type NextOfferId<T> = 
-		StorageValue<_, u32, ValueQuery>;
-	
+	pub(super) type NextOfferId<T> = StorageValue<_, u32, ValueQuery>;
+
 	#[pallet::storage]
 	#[pallet::getter(fn game_id)]
 	pub type GameId<T> = StorageValue<_, u32, ValueQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn player_points)]
-	pub type PlayerPoints<T> = StorageMap<
-		_, 
-		Blake2_128Concat, 
-		AccountIdOf<T>, 
-		u32, 
-		ValueQuery,
-	>;
+	pub type PlayerPoints<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, u32, ValueQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn game_info)]
@@ -201,7 +194,7 @@ pub mod pallet {
 		_,
 		Blake2_128Concat,
 		u32,
-		GameData<<T as pallet::Config>::CollectionId, T>,
+		GameData<T>,
 		OptionQuery,
 	>;
 
@@ -235,14 +228,23 @@ pub mod pallet {
 		ValueQuery,
 	>;
 
+	/// A List of test properties
+	#[pallet::storage]
+	#[pallet::getter(fn test_properties)]
+	pub type TestProperties<T: Config> =
+		StorageValue<_, BoundedVec<PropertyInfoData<T>, T::MaxProperty>, ValueQuery>;
+
+	/// Test for properties
+	#[pallet::storage]
+	#[pallet::getter(fn test_prices)]
+	pub type TestPrices<T: Config> =
+		StorageMap<_, Blake2_128Concat, u32, u32, OptionQuery>;
+
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/main-docs/build/events-errors/
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
-		SomethingStored { something: u32, who: T::AccountId },
 	}
 
 	// Errors inform users that something went wrong.
@@ -268,6 +270,10 @@ pub mod pallet {
 		ListingDoesNotExist,
 		/// This offer does not exist.
 		OfferDoesNotExist,
+		/// There are too many test properties.
+		TooManyTest,
+		/// No property could be found.
+		NoProperty,
 	}
 
 	#[pallet::hooks]
@@ -283,8 +289,6 @@ pub mod pallet {
 				if let Some(game_info) = game_info {
 					let _ = Self::NoAnswerResult(game_info);
 				}
-				///check for result.
-				todo!();
 			});
 			weight
 		}
@@ -295,62 +299,49 @@ pub mod pallet {
 	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
-		#[pallet::call_index(0)]
+		#[pallet::call_index(7)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::do_something())]
-		pub fn play_game(origin: OriginFor<T>, game_type: DifficultyLevel, rand: u8) -> DispatchResult {
+		pub fn play_game(
+			origin: OriginFor<T>,
+			game_type: DifficultyLevel,
+			rand: u8,
+		) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
-			Self::check_enough_points(signer, game_type.clone())?;
+			Self::check_enough_points(signer.clone(), game_type.clone())?;
 			let mut game_id = Self::game_id();
-			let (hashi, _) = pallet_babe::ParentBlockRandomness::<T>::random(&[rand]);
-            StoredHash::<T>::put(hashi);
-			let u32_value = u32::from_le_bytes(
-                hashi.unwrap().as_ref()[4..8]
-                    .try_into()
-                    .map_err(|_| Error::<T>::ConversionError)?
-            );
-			StoredNumber::<T>::put(u32_value);
 			if game_type == DifficultyLevel::Player {
 				let current_block_number = <frame_system::Pallet<T>>::block_number();
-				let expiry_block =
-					current_block_number.saturating_add(8u32.into());
-	
+				let expiry_block = current_block_number.saturating_add(8u32.into());
+
 				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
 					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
 					Ok::<(), DispatchError>(())
 				})?;
 			} else if game_type == DifficultyLevel::Pro {
 				let current_block_number = <frame_system::Pallet<T>>::block_number();
-				let expiry_block =
-				current_block_number.saturating_add(5u32.into());
-	
+				let expiry_block = current_block_number.saturating_add(5u32.into());
+
 				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
 					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
 					Ok::<(), DispatchError>(())
 				})?;
 			} else {
 				let current_block_number = <frame_system::Pallet<T>>::block_number();
-				let expiry_block =
-				current_block_number.saturating_add(10u32.into());
-	
+				let expiry_block = current_block_number.saturating_add(10u32.into());
+
 				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
 					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
 					Ok::<(), DispatchError>(())
 				})?;
 			}
-			/// Call crust or oracle to chose a property for a game
-			todo!();
-			let random_number = u32_value % 8;
-			let property = PropertyData {
-				collection_id: random_number.into(),
-				data: Default::default(),
-			};
-			let game_datas = GameData {
-				difficulty: game_type,
-				player: signer,
-				property,
-			};
+			let (hashi, _) = T::GameRandomness::random(&[rand]);
+			StoredHash::<T>::put(hashi);
+			let u32_value = u32::from_le_bytes(
+				hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
+			);
+			let random_number = u32_value as usize % Self::test_properties().len().checked_sub(1).ok_or(Error::<T>::ArithmeticUnderflow)?;
+			let property = Self::test_properties()[random_number].clone();
+			let game_datas = GameData { difficulty: game_type, player: signer, property };
 			GameInfo::<T>::insert(game_id, game_datas);
 			game_id = game_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
 			GameId::<T>::put(game_id);
@@ -363,26 +354,35 @@ pub mod pallet {
 			let signer = ensure_signed(origin)?;
 			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
 			ensure!(signer == game_info.player, Error::<T>::NoThePlayer);
-			let result: u32 = 100_000;
-			let difference_value = ((result as i32).checked_sub(guess as i32).ok_or(Error::<T>::ArithmeticUnderflow)?)
-				.checked_mul(1000).ok_or(Error::<T>::MultiplyError)?
-				.checked_div(result as i32).ok_or(Error::<T>::DivisionError)?;
+			let property_id = game_info.property.id; 
+			let result: u32 = Self::test_prices(property_id).ok_or(Error::<T>::NoProperty)?;
+			let difference_value = ((result as i32)
+				.checked_sub(guess as i32)
+				.ok_or(Error::<T>::ArithmeticUnderflow)?)
+			.checked_mul(1000)
+			.ok_or(Error::<T>::MultiplyError)?
+			.checked_div(result as i32)
+			.ok_or(Error::<T>::DivisionError)?;
 			Self::check_result(difference_value.try_into().unwrap(), game_id)?;
 			Ok(())
 		}
 
-		
 		#[pallet::call_index(3)]
 		#[pallet::weight(0)]
-		pub fn list_nft(origin: OriginFor<T>, collection_id: CollectionId<T>, item_id: ItemId<T>) -> DispatchResult {
+		pub fn list_nft(
+			origin: OriginFor<T>,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
-			pallet_nfts::Pallet::<T>::transfer(origin, collection_id.into(), item_id.into(), pallet_lookup)?;
-			let listing_info = ListingInfo {
-				owner: signer,
-				collection_id,
-				item_id,
-			};
+			pallet_nfts::Pallet::<T>::transfer(
+				origin,
+				collection_id.into(),
+				item_id.into(),
+				pallet_lookup,
+			)?;
+			let listing_info = ListingInfo { owner: signer, collection_id, item_id };
 			let mut listing_id = Self::next_lising_id();
 			Listings::<T>::insert(listing_id, listing_info);
 			listing_id = listing_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
@@ -394,7 +394,8 @@ pub mod pallet {
 		#[pallet::weight(0)]
 		pub fn delist_nft(origin: OriginFor<T>, listing_id: u32) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
-			let listing_info = Listings::<T>::take(listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			let listing_info =
+				Listings::<T>::take(listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
 			ensure!(listing_info.owner == signer, Error::<T>::NoPermission);
 			pallet_nfts::Pallet::<T>::do_transfer(
 				listing_info.collection_id.into(),
@@ -407,17 +408,22 @@ pub mod pallet {
 
 		#[pallet::call_index(5)]
 		#[pallet::weight(0)]
-		pub fn make_offer(origin: OriginFor<T>, listing_id: u32, collection_id: CollectionId<T>, item_id: ItemId<T>) -> DispatchResult {
+		pub fn make_offer(
+			origin: OriginFor<T>,
+			listing_id: u32,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			ensure!(Self::listings(listing_id).is_some(), Error::<T>::ListingDoesNotExist);
 			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
-			pallet_nfts::Pallet::<T>::transfer(origin, collection_id.into(), item_id.into(), pallet_lookup)?;
-			let offer_info = OfferInfo {
-				owner: signer,
-				listing_id,
-				collection_id,
-				item_id,
-			};
+			pallet_nfts::Pallet::<T>::transfer(
+				origin,
+				collection_id.into(),
+				item_id.into(),
+				pallet_lookup,
+			)?;
+			let offer_info = OfferInfo { owner: signer, listing_id, collection_id, item_id };
 			let mut offer_id = Self::next_offer_id();
 			Offers::<T>::insert(offer_id, offer_info);
 			let offer_id = offer_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
@@ -430,7 +436,8 @@ pub mod pallet {
 		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
-			let listing_details = Self::listings(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			let listing_details =
+				Self::listings(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
 			ensure!(listing_details.owner == signer, Error::<T>::NoPermission);
 			if offer == Offer::Accept {
 				pallet_nfts::Pallet::<T>::do_transfer(
@@ -445,7 +452,8 @@ pub mod pallet {
 					listing_details.owner,
 					|_, _| Ok(()),
 				)?;
-				Listings::<T>::take(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+				Listings::<T>::take(offer_details.listing_id)
+					.ok_or(Error::<T>::ListingDoesNotExist)?;
 			} else {
 				pallet_nfts::Pallet::<T>::do_transfer(
 					offer_details.collection_id.into(),
@@ -486,164 +494,190 @@ pub mod pallet {
 					},
 				)?;
 			}
+			Self::create_test_properties()?;
 			Ok(())
 		}
 
+		#[pallet::call_index(10)]
+		#[pallet::weight(0)]
+		pub fn give_points(origin: OriginFor<T>, receiver: AccountIdOf<T>) -> DispatchResult {
+			T::GameOrigin::ensure_origin(origin)?;
+			let mut points = Self::player_points(receiver.clone());
+			points = points.checked_add(100).ok_or(Error::<T>::ArithmeticUnderflow)?;
+			PlayerPoints::<T>::insert(receiver, points);
+			Ok(())
+		}
 	}
 
-
 	impl<T: Config> Pallet<T> {
-
 		/// Get the account id of the pallet
 		pub fn account_id() -> AccountIdOf<T> {
 			<T as pallet::Config>::PalletId::get().into_account_truncating()
 		}
-	
+
 		fn check_enough_points(
 			signer: AccountIdOf<T>,
-			game_type: DifficultyLevel
+			game_type: DifficultyLevel,
 		) -> DispatchResult {
 			if game_type == DifficultyLevel::Pro {
 				ensure!(Self::player_points(signer) >= 50, Error::<T>::NotEnoughPoints);
 			} else if game_type == DifficultyLevel::Player {
 				ensure!(Self::player_points(signer) >= 25, Error::<T>::NotEnoughPoints);
-			} 
+			}
 			Ok(())
 		}
 
- 		fn check_result(
-			difference: u16,
-			game_id: u32,
-		) -> DispatchResult {
+		fn check_result(difference: u16, game_id: u32) -> DispatchResult {
 			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoAcitveGame)?;
 			if game_info.difficulty == DifficultyLevel::Pro {
 				match difference {
 					0..=10 => {
-						let mut next_item_id = Self::next_color_id(game_info.property.collection_id);
+						let (hashi, _) = T::GameRandomness::random(&[game_id as u8]);
+						StoredHash::<T>::put(hashi);
+						let u32_value = u32::from_le_bytes(
+							hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
+						);
+						let random_number = u32_value % 8;		
+						let collection_id: <T as pallet::Config>::CollectionId = random_number.into();  				
+						let mut next_item_id =
+							Self::next_color_id(collection_id);
 						let item_id: ItemId<T> = next_item_id.into();
-						let next_item_id = next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
-						NextColorId::<T>::insert(game_info.property.collection_id, next_item_id);
+						let next_item_id =
+							next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+						NextColorId::<T>::insert(collection_id, next_item_id);
 						pallet_nfts::Pallet::<T>::do_mint(
-							game_info.property.collection_id.into(),
+							collection_id.into(),
 							item_id.into(),
 							Some(Self::account_id()),
 							game_info.player.clone(),
 							Self::default_item_config(),
 							|_, _| Ok(()),
 						)?;
-					}
+					},
 					11..=30 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_add(50).ok_or(Error::<T>::ArithmeticOverflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					} 
+					},
 					31..=50 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_add(30).ok_or(Error::<T>::ArithmeticOverflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					} 
+					},
 					51..=100 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_add(10).ok_or(Error::<T>::ArithmeticOverflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					101..=150 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					151..=200 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					201..=250 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(30).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					251..=300 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(40).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					_ => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 				}
-			}
-			else if game_info.difficulty == DifficultyLevel::Player {
+			} else if game_info.difficulty == DifficultyLevel::Player {
 				match difference {
 					0..=10 => {
-						let mut next_item_id = Self::next_color_id(game_info.property.collection_id);
+						let (hashi, _) = T::GameRandomness::random(&[game_id as u8]);
+						StoredHash::<T>::put(hashi);
+						let u32_value = u32::from_le_bytes(
+							hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
+						);
+						let random_number = u32_value % 8;		
+						let collection_id: <T as pallet::Config>::CollectionId = random_number.into();  	
+						let mut next_item_id =
+							Self::next_color_id(collection_id);
 						let item_id: ItemId<T> = next_item_id.into();
-						let next_item_id = next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
-						NextColorId::<T>::insert(game_info.property.collection_id, next_item_id);
+						let next_item_id =
+							next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+						NextColorId::<T>::insert(collection_id, next_item_id);
 						pallet_nfts::Pallet::<T>::do_mint(
-							game_info.property.collection_id.into(),
+							collection_id.into(),
 							item_id.into(),
 							Some(Self::account_id()),
 							game_info.player,
 							Self::default_item_config(),
 							|_, _| Ok(()),
 						)?;
-					}
+					},
 					11..=30 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_add(25).ok_or(Error::<T>::ArithmeticOverflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					} 
+					},
 					31..=50 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_add(15).ok_or(Error::<T>::ArithmeticOverflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					} 
+					},
 					51..=100 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_add(5).ok_or(Error::<T>::ArithmeticOverflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					101..=150 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(5).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					151..=200 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					201..=250 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(15).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					251..=300 => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player.clone(), points);
-					}
+					},
 					_ => {
 						let mut points = Self::player_points(game_info.player.clone());
 						points = points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
 						PlayerPoints::<T>::insert(game_info.player, points);
-					}
+					},
 				}
 			}
 			Ok(())
-		} 
+		}
 
-		fn NoAnswerResult(game_info: GameData<<T as pallet::Config>::CollectionId, T>) -> DispatchResult {
+		fn NoAnswerResult(
+			game_info: GameData<T>,
+		) -> DispatchResult {
 			if game_info.difficulty == DifficultyLevel::Pro {
-				let mut points = Self::player_points(game_info.player.clone());
+ 				let mut points = Self::player_points(game_info.player.clone());
 				points = points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
-				PlayerPoints::<T>::insert(game_info.player, points);
+				PlayerPoints::<T>::insert(game_info.player, points); 
 			} else if game_info.difficulty == DifficultyLevel::Player {
-				let mut points = Self::player_points(game_info.player.clone());
+ 				let mut points = Self::player_points(game_info.player.clone());
 				points = points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
-				PlayerPoints::<T>::insert(game_info.player, points);
+				PlayerPoints::<T>::insert(game_info.player, points); 
+			} else {
+
 			}
 			Ok(())
 		}
@@ -679,4 +713,3 @@ pub mod pallet {
 		}
 	}
 }
-
