@@ -37,6 +37,8 @@ use pallet_nfts::{
 	CollectionConfig, CollectionSetting, CollectionSettings, ItemConfig, ItemSettings, MintSettings,
 };
 
+use frame_system::RawOrigin;
+
 use enumflags2::BitFlags;
 
 use frame_support::traits::Randomness;
@@ -245,6 +247,45 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
+		/// A user has received points.
+		PointsReceived {
+			receiver: AccountIdOf<T>,
+			amount: u32,
+		},
+		/// A game has started.
+		GameStarted {
+			player: AccountIdOf<T>,
+			game_id: u32,
+		},
+		/// An answer has been submitted.
+		AnswerSubmitted {
+			player: AccountIdOf<T>,
+			game_id: u32,
+		},
+		/// A nft has been listed.
+		NftListed {
+			owner: AccountIdOf<T>,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		},
+		/// A nft has been delisted.
+		NftDelisted {
+			owner: AccountIdOf<T>,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		},
+		/// An offer has been made.
+		OfferMade {
+			owner: AccountIdOf<T>,
+			listing_id: u32,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		},
+		/// An offer has been handled.
+		OfferHandeld {
+			offer_id: u32,
+			offer: Offer,
+		}
 	}
 
 	// Errors inform users that something went wrong.
@@ -259,11 +300,9 @@ pub mod pallet {
 		DivisionError,
 		/// There are too many games active.
 		TooManyGames,
-		/// This is not an active game.
-		NoAcitveGame,
 		/// The caller has no permission.
 		NoThePlayer,
-		/// This game is not active.
+		/// This is not an active game.
 		NoActiveGame,
 		NoPermission,
 		/// This listing is not listed.
@@ -299,173 +338,10 @@ pub mod pallet {
 	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::call_index(7)]
-		#[pallet::weight(<T as pallet::Config>::WeightInfo::do_something())]
-		pub fn play_game(
-			origin: OriginFor<T>,
-			game_type: DifficultyLevel,
-			rand: u8,
-		) -> DispatchResult {
-			let signer = ensure_signed(origin)?;
-			Self::check_enough_points(signer.clone(), game_type.clone())?;
-			let mut game_id = Self::game_id();
-			if game_type == DifficultyLevel::Player {
-				let current_block_number = <frame_system::Pallet<T>>::block_number();
-				let expiry_block = current_block_number.saturating_add(8u32.into());
-
-				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
-					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
-					Ok::<(), DispatchError>(())
-				})?;
-			} else if game_type == DifficultyLevel::Pro {
-				let current_block_number = <frame_system::Pallet<T>>::block_number();
-				let expiry_block = current_block_number.saturating_add(5u32.into());
-
-				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
-					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
-					Ok::<(), DispatchError>(())
-				})?;
-			} else {
-				let current_block_number = <frame_system::Pallet<T>>::block_number();
-				let expiry_block = current_block_number.saturating_add(10u32.into());
-
-				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
-					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
-					Ok::<(), DispatchError>(())
-				})?;
-			}
-			let (hashi, _) = T::GameRandomness::random(&[rand]);
-			StoredHash::<T>::put(hashi);
-			let u32_value = u32::from_le_bytes(
-				hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
-			);
-			let random_number = u32_value as usize % Self::test_properties().len().checked_sub(1).ok_or(Error::<T>::ArithmeticUnderflow)?;
-			let property = Self::test_properties()[random_number].clone();
-			let game_datas = GameData { difficulty: game_type, player: signer, property };
-			GameInfo::<T>::insert(game_id, game_datas);
-			game_id = game_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
-			GameId::<T>::put(game_id);
-			Ok(())
-		}
-
-		#[pallet::call_index(1)]
-		#[pallet::weight(0)]
-		pub fn submit_answer(origin: OriginFor<T>, guess: u32, game_id: u32) -> DispatchResult {
-			let signer = ensure_signed(origin)?;
-			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
-			ensure!(signer == game_info.player, Error::<T>::NoThePlayer);
-			let property_id = game_info.property.id; 
-			let result: u32 = Self::test_prices(property_id).ok_or(Error::<T>::NoProperty)?;
-			let difference_value = ((result as i32)
-				.checked_sub(guess as i32)
-				.ok_or(Error::<T>::ArithmeticUnderflow)?)
-			.checked_mul(1000)
-			.ok_or(Error::<T>::MultiplyError)?
-			.checked_div(result as i32)
-			.ok_or(Error::<T>::DivisionError)?;
-			Self::check_result(difference_value.try_into().unwrap(), game_id)?;
-			Ok(())
-		}
-
-		#[pallet::call_index(3)]
-		#[pallet::weight(0)]
-		pub fn list_nft(
-			origin: OriginFor<T>,
-			collection_id: CollectionId<T>,
-			item_id: ItemId<T>,
-		) -> DispatchResult {
-			let signer = ensure_signed(origin.clone())?;
-			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
-			pallet_nfts::Pallet::<T>::transfer(
-				origin,
-				collection_id.into(),
-				item_id.into(),
-				pallet_lookup,
-			)?;
-			let listing_info = ListingInfo { owner: signer, collection_id, item_id };
-			let mut listing_id = Self::next_lising_id();
-			Listings::<T>::insert(listing_id, listing_info);
-			listing_id = listing_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
-			NextListingId::<T>::put(listing_id);
-			Ok(())
-		}
-
-		#[pallet::call_index(4)]
-		#[pallet::weight(0)]
-		pub fn delist_nft(origin: OriginFor<T>, listing_id: u32) -> DispatchResult {
-			let signer = ensure_signed(origin.clone())?;
-			let listing_info =
-				Listings::<T>::take(listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
-			ensure!(listing_info.owner == signer, Error::<T>::NoPermission);
-			pallet_nfts::Pallet::<T>::do_transfer(
-				listing_info.collection_id.into(),
-				listing_info.item_id.into(),
-				signer.clone(),
-				|_, _| Ok(()),
-			)?;
-			Ok(())
-		}
-
-		#[pallet::call_index(5)]
-		#[pallet::weight(0)]
-		pub fn make_offer(
-			origin: OriginFor<T>,
-			listing_id: u32,
-			collection_id: CollectionId<T>,
-			item_id: ItemId<T>,
-		) -> DispatchResult {
-			let signer = ensure_signed(origin.clone())?;
-			ensure!(Self::listings(listing_id).is_some(), Error::<T>::ListingDoesNotExist);
-			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
-			pallet_nfts::Pallet::<T>::transfer(
-				origin,
-				collection_id.into(),
-				item_id.into(),
-				pallet_lookup,
-			)?;
-			let offer_info = OfferInfo { owner: signer, listing_id, collection_id, item_id };
-			let mut offer_id = Self::next_offer_id();
-			Offers::<T>::insert(offer_id, offer_info);
-			let offer_id = offer_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
-			NextOfferId::<T>::put(offer_id);
-			Ok(())
-		}
-
-		#[pallet::call_index(6)]
-		#[pallet::weight(0)]
-		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
-			let signer = ensure_signed(origin.clone())?;
-			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
-			let listing_details =
-				Self::listings(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
-			ensure!(listing_details.owner == signer, Error::<T>::NoPermission);
-			if offer == Offer::Accept {
-				pallet_nfts::Pallet::<T>::do_transfer(
-					listing_details.collection_id.into(),
-					listing_details.item_id.into(),
-					offer_details.owner,
-					|_, _| Ok(()),
-				)?;
-				pallet_nfts::Pallet::<T>::do_transfer(
-					offer_details.collection_id.into(),
-					offer_details.item_id.into(),
-					listing_details.owner,
-					|_, _| Ok(()),
-				)?;
-				Listings::<T>::take(offer_details.listing_id)
-					.ok_or(Error::<T>::ListingDoesNotExist)?;
-			} else {
-				pallet_nfts::Pallet::<T>::do_transfer(
-					offer_details.collection_id.into(),
-					offer_details.item_id.into(),
-					offer_details.owner,
-					|_, _| Ok(()),
-				)?;
-			}
-			Ok(())
-		}
-
-		#[pallet::call_index(2)]
+		/// Creates the setup for a new game.
+		///
+		/// The origin must be the sudo.
+		#[pallet::call_index(0)]
 		#[pallet::weight(0)]
 		pub fn setup_game(origin: OriginFor<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
@@ -498,13 +374,304 @@ pub mod pallet {
 			Ok(())
 		}
 
-		#[pallet::call_index(10)]
+		/// Gives points to a user.
+		///
+		/// The origin must be the sudo.
+		///
+		/// Parameters:
+		/// - `receiver`: The AccountId of the user who gets points.
+		///
+		/// Emits `LocationCreated` event when succesfful.
+		#[pallet::call_index(1)]
 		#[pallet::weight(0)]
 		pub fn give_points(origin: OriginFor<T>, receiver: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
 			let mut points = Self::player_points(receiver.clone());
 			points = points.checked_add(100).ok_or(Error::<T>::ArithmeticUnderflow)?;
-			PlayerPoints::<T>::insert(receiver, points);
+			PlayerPoints::<T>::insert(receiver.clone(), points);
+			Self::deposit_event(Event::<T>::PointsReceived{receiver, amount: 100});
+			Ok(())
+		}
+
+		/// Starts a game for the player.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Parameters:
+		/// - `game_type`: The difficulty level of the game.
+		///
+		/// Emits `GameStarted` event when succesfful.
+		#[pallet::call_index(2)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::do_something())]
+		pub fn play_game(
+			origin: OriginFor<T>,
+			game_type: DifficultyLevel,
+		) -> DispatchResult {
+			let signer = ensure_signed(origin)?;
+			Self::check_enough_points(signer.clone(), game_type.clone())?;
+			let game_id = Self::game_id();
+			if game_type == DifficultyLevel::Player {
+				let current_block_number = <frame_system::Pallet<T>>::block_number();
+				let expiry_block = current_block_number.saturating_add(8u32.into());
+
+				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
+					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
+					Ok::<(), DispatchError>(())
+				})?;
+			} else if game_type == DifficultyLevel::Pro {
+				let current_block_number = <frame_system::Pallet<T>>::block_number();
+				let expiry_block = current_block_number.saturating_add(5u32.into());
+
+				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
+					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
+					Ok::<(), DispatchError>(())
+				})?;
+			} else {
+				let current_block_number = <frame_system::Pallet<T>>::block_number();
+				let expiry_block = current_block_number.saturating_add(10u32.into());
+
+				GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
+					keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
+					Ok::<(), DispatchError>(())
+				})?;
+			}
+			let (hashi, _) = T::GameRandomness::random(&[(game_id % 256) as u8]);
+			StoredHash::<T>::put(hashi);
+			let u32_value = u32::from_le_bytes(
+				hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
+			);
+			let random_number = u32_value as usize % Self::test_properties().len().checked_sub(1).ok_or(Error::<T>::ArithmeticUnderflow)?;
+			let property = Self::test_properties()[random_number].clone();
+			let game_datas = GameData { difficulty: game_type, player: signer.clone(), property };
+			GameInfo::<T>::insert(game_id, game_datas);
+			let next_game_id = game_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+			GameId::<T>::put(next_game_id);
+			Self::deposit_event(Event::<T>::GameStarted {
+				player: signer,
+				game_id,
+			});
+			Ok(())
+		}
+
+		/// Checks the answer of the player and handles rewards accordingly.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Parameters:
+		/// - `guess`: The answer of the player.
+		/// - `game_id`: The id of the game that the player wants to answer to.
+		///
+		/// Emits `AnswerSubmitted` event when succesfful.
+		#[pallet::call_index(3)]
+		#[pallet::weight(0)]
+		pub fn submit_answer(origin: OriginFor<T>, guess: u32, game_id: u32) -> DispatchResult {
+			let signer = ensure_signed(origin)?;
+			let game_info = Self::game_info(game_id).ok_or(Error::<T>::NoActiveGame)?;
+			ensure!(signer == game_info.player, Error::<T>::NoThePlayer);
+			let property_id = game_info.property.id; 
+			let result: u32 = Self::test_prices(property_id).ok_or(Error::<T>::NoProperty)?;
+			let difference_value = ((result as i32)
+				.checked_sub(guess as i32)
+				.ok_or(Error::<T>::ArithmeticUnderflow)?)
+				.checked_mul(1000)
+				.ok_or(Error::<T>::MultiplyError)?
+				.checked_div(result as i32)
+				.ok_or(Error::<T>::DivisionError)?
+				.abs();
+			Self::check_result(difference_value.try_into().unwrap(), game_id)?;
+			Self::deposit_event(Event::<T>::AnswerSubmitted {
+				player: signer,
+				game_id,
+			});
+			Ok(())
+		}
+
+		/// Lists a nft from the user.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Parameters:
+		/// - `collection_id`: The collection id of the nft that will be listed.
+		/// - `item_id`: The item id of the nft that will be listed.
+		///
+		/// Emits `NftListed` event when succesfful.
+		#[pallet::call_index(4)]
+		#[pallet::weight(0)]
+		pub fn list_nft(
+			origin: OriginFor<T>,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
+			ensure!(pallet_nfts::Pallet::<T>::owner(collection_id.into(), item_id.into()) == Some(signer.clone()), Error::<T>::NoPermission);
+			let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
+			pallet_nfts::Pallet::<T>::unlock_item_transfer(
+				pallet_origin,
+				collection_id.into(),
+				item_id.into(),
+			)?;
+			pallet_nfts::Pallet::<T>::transfer(
+				origin,
+				collection_id.into(),
+				item_id.into(),
+				pallet_lookup,
+			)?;
+			let listing_info = ListingInfo { owner: signer.clone(), collection_id, item_id };
+			let mut listing_id = Self::next_lising_id();
+			Listings::<T>::insert(listing_id, listing_info);
+			listing_id = listing_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+			NextListingId::<T>::put(listing_id);
+			Self::deposit_event(Event::<T>::NftListed {
+				owner: signer,
+				collection_id,
+				item_id,
+			});
+			Ok(())
+		}
+
+		/// Delists a nft from the user.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Parameters:
+		/// - `listing_id`: The listing id of the listing.
+		///
+		/// Emits `NftDelisted` event when succesfful.
+		#[pallet::call_index(5)]
+		#[pallet::weight(0)]
+		pub fn delist_nft(origin: OriginFor<T>, listing_id: u32) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			let listing_info =
+				Listings::<T>::take(listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			ensure!(listing_info.owner == signer, Error::<T>::NoPermission);
+			pallet_nfts::Pallet::<T>::do_transfer(
+				listing_info.collection_id.into(),
+				listing_info.item_id.into(),
+				signer.clone(),
+				|_, _| Ok(()),
+			)?;
+			let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
+			pallet_nfts::Pallet::<T>::lock_item_transfer(
+				pallet_origin,
+				listing_info.collection_id.into(),
+				listing_info.item_id.into(),
+			)?;
+			Self::deposit_event(Event::<T>::NftDelisted {
+				owner: signer,
+				collection_id: listing_info.collection_id,
+				item_id: listing_info.item_id,
+			});
+			Ok(())
+		}
+
+		/// Makes an offer for a nft listing.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Parameters:
+		/// - `listing_id`: The listing id of the listing.
+		/// - `collection_id`: The collection id of the nft that will be offered.
+		/// - `item_id`: The item id of the nft that will be offered.
+		///
+		/// Emits `OfferMade` event when succesfful.
+		#[pallet::call_index(6)]
+		#[pallet::weight(0)]
+		pub fn make_offer(
+			origin: OriginFor<T>,
+			listing_id: u32,
+			collection_id: CollectionId<T>,
+			item_id: ItemId<T>,
+		) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			ensure!(Self::listings(listing_id).is_some(), Error::<T>::ListingDoesNotExist);
+			let pallet_lookup = <T::Lookup as StaticLookup>::unlookup(Self::account_id());
+			let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
+			pallet_nfts::Pallet::<T>::unlock_item_transfer(
+				pallet_origin,
+				collection_id.into(),
+				item_id.into(),
+			)?;
+			pallet_nfts::Pallet::<T>::transfer(
+				origin,
+				collection_id.into(),
+				item_id.into(),
+				pallet_lookup,
+			)?;
+			let offer_info = OfferInfo { owner: signer.clone(), listing_id, collection_id, item_id };
+			let mut offer_id = Self::next_offer_id();
+			Offers::<T>::insert(offer_id, offer_info);
+			let offer_id = offer_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+			NextOfferId::<T>::put(offer_id);
+			Self::deposit_event(Event::<T>::OfferMade {
+				owner: signer,
+				listing_id,
+				collection_id,
+				item_id,
+			});
+			Ok(())
+		}
+
+		/// Handles an offer for a nft listing.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Parameters:
+		/// - `offer_id`: The id of the offer.
+		/// - `offer`: Must be either Accept or Reject.
+		///
+		/// Emits `OfferHandeld` event when succesfful.
+		#[pallet::call_index(7)]
+		#[pallet::weight(0)]
+		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
+			let signer = ensure_signed(origin.clone())?;
+			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
+			let listing_details =
+				Self::listings(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			ensure!(listing_details.owner == signer, Error::<T>::NoPermission);
+			let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
+			if offer == Offer::Accept {
+				pallet_nfts::Pallet::<T>::do_transfer(
+					listing_details.collection_id.into(),
+					listing_details.item_id.into(),
+					offer_details.owner,
+					|_, _| Ok(()),
+				)?;
+				pallet_nfts::Pallet::<T>::lock_item_transfer(
+					pallet_origin.clone(),
+					listing_details.collection_id.into(),
+					listing_details.item_id.into(),
+				)?;
+				pallet_nfts::Pallet::<T>::do_transfer(
+					offer_details.collection_id.into(),
+					offer_details.item_id.into(),
+					listing_details.owner,
+					|_, _| Ok(()),
+				)?;
+				pallet_nfts::Pallet::<T>::lock_item_transfer(
+					pallet_origin,
+					offer_details.collection_id.into(),
+					offer_details.item_id.into(),
+				)?;
+				Listings::<T>::take(offer_details.listing_id)
+					.ok_or(Error::<T>::ListingDoesNotExist)?;
+			} else {
+				pallet_nfts::Pallet::<T>::do_transfer(
+					offer_details.collection_id.into(),
+					offer_details.item_id.into(),
+					offer_details.owner,
+					|_, _| Ok(()),
+				)?;
+				pallet_nfts::Pallet::<T>::lock_item_transfer(
+					pallet_origin,
+					offer_details.collection_id.into(),
+					offer_details.item_id.into(),
+				)?;
+			}
+			Self::deposit_event(Event::<T>::OfferHandeld {
+				offer_id,
+				offer,
+			});
 			Ok(())
 		}
 	}
@@ -515,6 +682,7 @@ pub mod pallet {
 			<T as pallet::Config>::PalletId::get().into_account_truncating()
 		}
 
+		/// checks if the signer has enough points to start a game.
 		fn check_enough_points(
 			signer: AccountIdOf<T>,
 			game_type: DifficultyLevel,
@@ -527,8 +695,9 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// checks the answer and distributes the rewards accordingly.
 		fn check_result(difference: u16, game_id: u32) -> DispatchResult {
-			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoAcitveGame)?;
+			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
 			if game_info.difficulty == DifficultyLevel::Pro {
 				match difference {
 					0..=10 => {
@@ -552,6 +721,12 @@ pub mod pallet {
 							game_info.player.clone(),
 							Self::default_item_config(),
 							|_, _| Ok(()),
+						)?;
+						let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
+						pallet_nfts::Pallet::<T>::lock_item_transfer(
+							pallet_origin,
+							collection_id.into(),
+							item_id.into(),
 						)?;
 					},
 					11..=30 => {
@@ -619,6 +794,12 @@ pub mod pallet {
 							Self::default_item_config(),
 							|_, _| Ok(()),
 						)?;
+						let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
+						pallet_nfts::Pallet::<T>::lock_item_transfer(
+							pallet_origin,
+							collection_id.into(),
+							item_id.into(),
+						)?;
 					},
 					11..=30 => {
 						let mut points = Self::player_points(game_info.player.clone());
@@ -665,6 +846,7 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// Handles the case if the player did not answer on time.
 		fn NoAnswerResult(
 			game_info: GameData<T>,
 		) -> DispatchResult {
