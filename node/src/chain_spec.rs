@@ -1,10 +1,10 @@
 use node_template_runtime::{AccountId, RuntimeGenesisConfig, Signature, WASM_BINARY};
 use sc_service::ChainType;
+use sc_telemetry::serde_json;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_consensus_grandpa::AuthorityId as GrandpaId;
 use sp_core::{sr25519, Pair, Public};
 use sp_runtime::traits::{IdentifyAccount, Verify};
-use sc_telemetry::serde_json;
 
 // The URL for the telemetry server.
 // const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
@@ -34,6 +34,24 @@ pub fn authority_keys_from_seed(s: &str) -> (AuraId, GrandpaId) {
 	(get_from_seed::<AuraId>(s), get_from_seed::<GrandpaId>(s))
 }
 
+pub fn chain_spec_properties() -> serde_json::map::Map<String, serde_json::Value> {
+	serde_json::json!({
+		"ss58Format": 42,
+		"tokenDecimals": 12,
+		"tokenSymbol": "RXD",
+	})
+	.as_object()
+	.expect("Map given; qed")
+	.clone()
+}
+
+pub fn get_pallet_account() -> AccountId {
+	let json_data = &include_bytes!("../../seed/pallet_balance.json")[..];
+	let pallet_account_id: Vec<AccountId> = serde_json::from_slice(json_data).unwrap_or_default();
+
+	pallet_account_id[0].clone()
+}
+
 pub fn development_config() -> Result<ChainSpec, String> {
 	Ok(ChainSpec::builder(
 		WASM_BINARY.ok_or_else(|| "Development wasm not available".to_string())?,
@@ -53,9 +71,11 @@ pub fn development_config() -> Result<ChainSpec, String> {
 			get_account_id_from_seed::<sr25519::Public>("Bob"),
 			get_account_id_from_seed::<sr25519::Public>("Alice//stash"),
 			get_account_id_from_seed::<sr25519::Public>("Bob//stash"),
+			get_pallet_account(),
 		],
 		true,
 	))
+	.with_properties(chain_spec_properties())
 	.build())
 }
 
@@ -86,9 +106,11 @@ pub fn local_testnet_config() -> Result<ChainSpec, String> {
 			get_account_id_from_seed::<sr25519::Public>("Dave//stash"),
 			get_account_id_from_seed::<sr25519::Public>("Eve//stash"),
 			get_account_id_from_seed::<sr25519::Public>("Ferdie//stash"),
+			get_pallet_account(),
 		],
 		true,
 	))
+	.with_properties(chain_spec_properties())
 	.build())
 }
 
