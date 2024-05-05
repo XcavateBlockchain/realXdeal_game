@@ -4653,6 +4653,7 @@ dependencies = [
  "sp-runtime",
  "sp-session",
  "sp-std 8.0.0",
+ "sp-storage 13.0.0",
  "sp-transaction-pool",
  "sp-version",
  "substrate-wasm-builder",

@@ -18,6 +18,18 @@ fn current_block(n: u64) {
 	}
 }
 
+fn practise_round(player: AccountId, game_id: u32) {
+	assert_ok!(GameModule::play_game(
+		RuntimeOrigin::signed(player.clone()),
+		crate::DifficultyLevel::Practice, 
+	));
+	assert_ok!(GameModule::submit_answer(
+		RuntimeOrigin::signed(player),
+		220000, 
+		game_id
+	));
+}
+
 #[test]
 fn setup_game_works() {
 	new_test_ext().execute_with(|| {
@@ -40,12 +52,14 @@ fn play_game_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
 		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
 		));
-		assert_eq!(GameModule::game_info(0).unwrap().property.id, 1);
+		assert_eq!(GameModule::game_info(1).unwrap().property.id, 1);
 	});
 }
 
@@ -58,7 +72,31 @@ fn play_game_fails() {
 		assert_noop!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
-		), Error::<Test>::NotEnoughPoints);
+		), Error::<Test>::UserNotRegistered);
+	});
+}
+
+#[test]
+fn play_game_fails_not_enough_points() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
+		assert_eq!(GameModule::test_properties().len(), 4);
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));	
+		practise_round([0; 32].into(), 0);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player, 
+		));
+		assert_ok!(GameModule::submit_answer(
+			RuntimeOrigin::signed([0; 32].into()),
+			10, 
+			1
+		));
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player, 
+		));
 	});
 }
 
@@ -68,7 +106,8 @@ fn submit_answer_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));	
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -76,10 +115,10 @@ fn submit_answer_works() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			223_000, 
-			0
+			1
 		));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 125);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 80);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -87,10 +126,10 @@ fn submit_answer_works() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			1
+			2
 		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 125);
+		assert_eq!(GameModule::game_info(1).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 80);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 	});
 }
@@ -115,7 +154,9 @@ fn transfer_of_nft_does_not_work() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
 		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -123,9 +164,9 @@ fn transfer_of_nft_does_not_work() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			0
+			1
 		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
+		assert_eq!(GameModule::game_info(1).is_none(), true);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		assert_noop!(Nfts::transfer(RuntimeOrigin::signed([0; 32].into()), 0, 0, sp_runtime::MultiAddress::Id([1; 32].into())), DispatchError::Module(ModuleError {
 			index: 3,
@@ -141,7 +182,8 @@ fn list_nft_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -149,10 +191,10 @@ fn list_nft_works() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			0
+			1
 		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
+		assert_eq!(GameModule::game_info(1).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		assert_ok!(GameModule::list_nft(
 			RuntimeOrigin::signed([0; 32].into()),
@@ -170,7 +212,8 @@ fn list_nft_doesnt_work() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -178,10 +221,10 @@ fn list_nft_doesnt_work() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			0
+			1
 		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
+		assert_eq!(GameModule::game_info(1).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		assert_noop!(GameModule::list_nft(
 			RuntimeOrigin::signed([1; 32].into()),
@@ -197,7 +240,8 @@ fn delist_nft_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -205,10 +249,10 @@ fn delist_nft_works() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			0
+			1
 		));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		assert_ok!(GameModule::list_nft(
 			RuntimeOrigin::signed([0; 32].into()),
@@ -235,7 +279,8 @@ fn delist_nft_doesnt_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -243,10 +288,10 @@ fn delist_nft_doesnt_works() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			0
+			1
 		));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		assert_ok!(GameModule::list_nft(
 			RuntimeOrigin::signed([0; 32].into()),
@@ -268,28 +313,30 @@ fn make_offer_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [1; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [1; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
 		));
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
-			220_000, 
-			0
-		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
-		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
-		assert_ok!(GameModule::play_game(
-			RuntimeOrigin::signed([1; 32].into()),
-			crate::DifficultyLevel::Player, 
-		));
-		assert_ok!(GameModule::submit_answer(
-			RuntimeOrigin::signed([1; 32].into()),
 			220_000, 
 			1
+		));
+		assert_eq!(GameModule::game_info(0).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
+		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
+		practise_round([1; 32].into(), 2);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([1; 32].into()),
+			crate::DifficultyLevel::Player, 
+		));
+		assert_ok!(GameModule::submit_answer(
+			RuntimeOrigin::signed([1; 32].into()),
+			220_000, 
+			3
 		));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(
@@ -315,7 +362,9 @@ fn make_offer_doesnt_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
 		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
@@ -323,7 +372,7 @@ fn make_offer_doesnt_works() {
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
 			220_000, 
-			0
+			1
 		));
 		assert_noop!(GameModule::make_offer(
 			RuntimeOrigin::signed([1; 32].into()),
@@ -340,28 +389,30 @@ fn handle_offer_accept_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [1; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [1; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
 		));
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
-			220_000, 
-			0
-		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
-		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
-		assert_ok!(GameModule::play_game(
-			RuntimeOrigin::signed([1; 32].into()),
-			crate::DifficultyLevel::Player, 
-		));
-		assert_ok!(GameModule::submit_answer(
-			RuntimeOrigin::signed([1; 32].into()),
 			220_000, 
 			1
+		));
+		assert_eq!(GameModule::game_info(0).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
+		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
+		practise_round([1; 32].into(), 2);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([1; 32].into()),
+			crate::DifficultyLevel::Player, 
+		));
+		assert_ok!(GameModule::submit_answer(
+			RuntimeOrigin::signed([1; 32].into()),
+			220_000, 
+			3
 		));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(
@@ -406,28 +457,30 @@ fn handle_offer_Reject_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [1; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [1; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
 		));
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
-			220_000, 
-			0
-		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
-		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
-		assert_ok!(GameModule::play_game(
-			RuntimeOrigin::signed([1; 32].into()),
-			crate::DifficultyLevel::Player, 
-		));
-		assert_ok!(GameModule::submit_answer(
-			RuntimeOrigin::signed([1; 32].into()),
 			220_000, 
 			1
+		));
+		assert_eq!(GameModule::game_info(0).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
+		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
+		practise_round([1; 32].into(), 2);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([1; 32].into()),
+			crate::DifficultyLevel::Player, 
+		));
+		assert_ok!(GameModule::submit_answer(
+			RuntimeOrigin::signed([1; 32].into()),
+			220_000, 
+			3
 		));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(
@@ -466,28 +519,30 @@ fn handle_offer_doesnt_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::test_properties().len(), 4);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [1; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [1; 32].into()));
+		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player, 
 		));
 		assert_ok!(GameModule::submit_answer(
 			RuntimeOrigin::signed([0; 32].into()),
-			220_000, 
-			0
-		));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
-		assert_eq!(GameModule::player_points::<AccountId>([0; 32].into()), 100);
-		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
-		assert_ok!(GameModule::play_game(
-			RuntimeOrigin::signed([1; 32].into()),
-			crate::DifficultyLevel::Player, 
-		));
-		assert_ok!(GameModule::submit_answer(
-			RuntimeOrigin::signed([1; 32].into()),
 			220_000, 
 			1
+		));
+		assert_eq!(GameModule::game_info(0).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 55);
+		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
+		practise_round([1; 32].into(), 2);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([1; 32].into()),
+			crate::DifficultyLevel::Player, 
+		));
+		assert_ok!(GameModule::submit_answer(
+			RuntimeOrigin::signed([1; 32].into()),
+			220_000, 
+			3
 		));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(

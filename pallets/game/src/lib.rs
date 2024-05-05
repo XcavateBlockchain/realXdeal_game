@@ -120,6 +120,16 @@ pub mod pallet {
 		pub keyFeatures: BoundedVec<u8, <T as Config>::StringLimit>,
 	}
 
+	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
+	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[scale_info(skip_type_params(T))]
+	pub struct User {
+		pub points: u32,
+		pub wins: u32,
+		pub losses: u32,
+		pub practise_rounds: u8,
+	}
+
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
 	pub trait Config: frame_system::Config + pallet_nfts::Config //+ pallet_babe::Config
@@ -187,8 +197,8 @@ pub mod pallet {
 	pub type GameId<T> = StorageValue<_, u32, ValueQuery>;
 
 	#[pallet::storage]
-	#[pallet::getter(fn player_points)]
-	pub type PlayerPoints<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, u32, ValueQuery>;
+	#[pallet::getter(fn users)]
+	pub type Users<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, User, OptionQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn game_info)]
@@ -285,6 +295,10 @@ pub mod pallet {
 		OfferHandeld {
 			offer_id: u32,
 			offer: Offer,
+		},
+		/// A new player has been registered 
+		NewPlayerRegistered {
+			player: AccountIdOf<T>,
 		}
 	}
 
@@ -313,6 +327,12 @@ pub mod pallet {
 		TooManyTest,
 		/// No property could be found.
 		NoProperty,
+		/// The user has not yet been registered.
+		UserNotRegistered,
+		/// The user has already made 5 practise rounds.
+		TooManyPractise,
+		/// The user has not yet made a practise round.
+		NoPractise,
 	}
 
 	#[pallet::hooks]
@@ -342,7 +362,7 @@ pub mod pallet {
 		///
 		/// The origin must be the sudo.
 		#[pallet::call_index(0)]
-		#[pallet::weight(0)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::setup_game())]
 		pub fn setup_game(origin: OriginFor<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
 			for _x in 0..8 {
@@ -374,6 +394,29 @@ pub mod pallet {
 			Ok(())
 		}
 
+		/// Registers a player and gives him initialy 50 points.
+		///
+		/// The origin must be the sudo.
+		///
+		/// Parameters:
+		/// - `player`: The AccountId of the user who gets registered.
+		///
+		/// Emits `NewPlayerRegistered` event when succesfful.
+		#[pallet::call_index(1)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::register_user())]
+		pub fn register_user(origin: OriginFor<T>, player: AccountIdOf<T>) -> DispatchResult {
+			T::GameOrigin::ensure_origin(origin)?;
+			let user = User {
+				points: 50,
+				wins: Default::default(),
+				losses: Default::default(),
+				practise_rounds: Default::default(),
+			};
+			Users::<T>::insert(player.clone(), user);
+			Self::deposit_event(Event::<T>::NewPlayerRegistered{player});
+			Ok(())
+		}
+
 		/// Gives points to a user.
 		///
 		/// The origin must be the sudo.
@@ -382,13 +425,13 @@ pub mod pallet {
 		/// - `receiver`: The AccountId of the user who gets points.
 		///
 		/// Emits `LocationCreated` event when succesfful.
-		#[pallet::call_index(1)]
-		#[pallet::weight(0)]
+		#[pallet::call_index(2)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::give_points())]
 		pub fn give_points(origin: OriginFor<T>, receiver: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
-			let mut points = Self::player_points(receiver.clone());
-			points = points.checked_add(100).ok_or(Error::<T>::ArithmeticUnderflow)?;
-			PlayerPoints::<T>::insert(receiver.clone(), points);
+			let mut user = Self::users(receiver.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			user.points = user.points.checked_add(100).ok_or(Error::<T>::ArithmeticUnderflow)?;
+			Users::<T>::insert(receiver.clone(), user);
 			Self::deposit_event(Event::<T>::PointsReceived{receiver, amount: 100});
 			Ok(())
 		}
@@ -401,8 +444,8 @@ pub mod pallet {
 		/// - `game_type`: The difficulty level of the game.
 		///
 		/// Emits `GameStarted` event when succesfful.
-		#[pallet::call_index(2)]
-		#[pallet::weight(<T as pallet::Config>::WeightInfo::do_something())]
+		#[pallet::call_index(3)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::play_game())]
 		pub fn play_game(
 			origin: OriginFor<T>,
 			game_type: DifficultyLevel,
@@ -462,8 +505,8 @@ pub mod pallet {
 		/// - `game_id`: The id of the game that the player wants to answer to.
 		///
 		/// Emits `AnswerSubmitted` event when succesfful.
-		#[pallet::call_index(3)]
-		#[pallet::weight(0)]
+		#[pallet::call_index(4)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::submit_answer())]
 		pub fn submit_answer(origin: OriginFor<T>, guess: u32, game_id: u32) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
 			let game_info = Self::game_info(game_id).ok_or(Error::<T>::NoActiveGame)?;
@@ -495,8 +538,8 @@ pub mod pallet {
 		/// - `item_id`: The item id of the nft that will be listed.
 		///
 		/// Emits `NftListed` event when succesfful.
-		#[pallet::call_index(4)]
-		#[pallet::weight(0)]
+		#[pallet::call_index(5)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::list_nft())]
 		pub fn list_nft(
 			origin: OriginFor<T>,
 			collection_id: CollectionId<T>,
@@ -538,8 +581,8 @@ pub mod pallet {
 		/// - `listing_id`: The listing id of the listing.
 		///
 		/// Emits `NftDelisted` event when succesfful.
-		#[pallet::call_index(5)]
-		#[pallet::weight(0)]
+		#[pallet::call_index(6)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::delist_nft())]
 		pub fn delist_nft(origin: OriginFor<T>, listing_id: u32) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let listing_info =
@@ -575,8 +618,8 @@ pub mod pallet {
 		/// - `item_id`: The item id of the nft that will be offered.
 		///
 		/// Emits `OfferMade` event when succesfful.
-		#[pallet::call_index(6)]
-		#[pallet::weight(0)]
+		#[pallet::call_index(7)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::make_offer())]
 		pub fn make_offer(
 			origin: OriginFor<T>,
 			listing_id: u32,
@@ -621,8 +664,8 @@ pub mod pallet {
 		/// - `offer`: Must be either Accept or Reject.
 		///
 		/// Emits `OfferHandeld` event when succesfful.
-		#[pallet::call_index(7)]
-		#[pallet::weight(0)]
+		#[pallet::call_index(8)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::handle_offer())]
 		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
@@ -688,9 +731,13 @@ pub mod pallet {
 			game_type: DifficultyLevel,
 		) -> DispatchResult {
 			if game_type == DifficultyLevel::Pro {
-				ensure!(Self::player_points(signer) >= 50, Error::<T>::NotEnoughPoints);
+				ensure!(Self::users(signer.clone()).ok_or(Error::<T>::UserNotRegistered)?.practise_rounds > 0, Error::<T>::NoPractise);
+				ensure!(Self::users(signer).ok_or(Error::<T>::UserNotRegistered)?.points >= 50, Error::<T>::NotEnoughPoints);
 			} else if game_type == DifficultyLevel::Player {
-				ensure!(Self::player_points(signer) >= 25, Error::<T>::NotEnoughPoints);
+				ensure!(Self::users(signer.clone()).ok_or(Error::<T>::UserNotRegistered)?.practise_rounds > 0, Error::<T>::NoPractise);
+				ensure!(Self::users(signer).ok_or(Error::<T>::UserNotRegistered)?.points >= 25, Error::<T>::NotEnoughPoints);
+			} else {
+				ensure!(Self::users(signer).ok_or(Error::<T>::UserNotRegistered)?.practise_rounds < 5, Error::<T>::TooManyPractise);
 			}
 			Ok(())
 		}
@@ -730,44 +777,44 @@ pub mod pallet {
 						)?;
 					},
 					11..=30 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_add(50).ok_or(Error::<T>::ArithmeticOverflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_add(50).ok_or(Error::<T>::ArithmeticOverflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					31..=50 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_add(30).ok_or(Error::<T>::ArithmeticOverflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_add(30).ok_or(Error::<T>::ArithmeticOverflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					51..=100 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_add(10).ok_or(Error::<T>::ArithmeticOverflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_add(10).ok_or(Error::<T>::ArithmeticOverflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					101..=150 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					151..=200 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					201..=250 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(30).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(30).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					251..=300 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(40).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(40).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					_ => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 				}
 			} else if game_info.difficulty == DifficultyLevel::Player {
@@ -802,46 +849,51 @@ pub mod pallet {
 						)?;
 					},
 					11..=30 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_add(25).ok_or(Error::<T>::ArithmeticOverflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_add(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					31..=50 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_add(15).ok_or(Error::<T>::ArithmeticOverflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_add(15).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					51..=100 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_add(5).ok_or(Error::<T>::ArithmeticOverflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_add(5).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					101..=150 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(5).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(5).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					151..=200 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					201..=250 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(15).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(15).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					251..=300 => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player.clone(), points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(20).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 					_ => {
-						let mut points = Self::player_points(game_info.player.clone());
-						points = points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
-						PlayerPoints::<T>::insert(game_info.player, points);
+						let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+						user.points = user.points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
+						Users::<T>::insert(game_info.player.clone(), user);
 					},
 				}
+			} else {
+				let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+				user.points = user.points.checked_add(5).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				user.practise_rounds = user.practise_rounds.checked_add(1).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				Users::<T>::insert(game_info.player.clone(), user);
 			}
 			Ok(())
 		}
@@ -851,13 +903,13 @@ pub mod pallet {
 			game_info: GameData<T>,
 		) -> DispatchResult {
 			if game_info.difficulty == DifficultyLevel::Pro {
- 				let mut points = Self::player_points(game_info.player.clone());
-				points = points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
-				PlayerPoints::<T>::insert(game_info.player, points); 
+				let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+				user.points = user.points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				Users::<T>::insert(game_info.player.clone(), user);
 			} else if game_info.difficulty == DifficultyLevel::Player {
- 				let mut points = Self::player_points(game_info.player.clone());
-				points = points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
-				PlayerPoints::<T>::insert(game_info.player, points); 
+				let mut user = Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+				user.points = user.points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				Users::<T>::insert(game_info.player.clone(), user);
 			} else {
 
 			}
