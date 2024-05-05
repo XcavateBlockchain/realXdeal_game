@@ -47,10 +47,9 @@ pub fn chain_spec_properties() -> serde_json::map::Map<String, serde_json::Value
 
 pub fn get_pallet_account() -> AccountId {
 	let json_data = &include_bytes!("../../seed/pallet_balance.json")[..];
-	let pallet_account_id: Vec<AccountId> =
-		serde_json::from_slice(json_data).unwrap_or_default();
+	let pallet_account_id: Vec<AccountId> = serde_json::from_slice(json_data).unwrap_or_default();
 
-		pallet_account_id[0].clone()
+	pallet_account_id[0].clone()
 }
 
 pub fn development_config() -> Result<ChainSpec, String> {

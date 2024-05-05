@@ -22,6 +22,7 @@ serde = { version = "1.0.197", features = ["derive"], optional = true }
 frame-benchmarking = { version = "4.0.0-dev", default-features = false, optional = true, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-v1.6.0" }
 frame-support = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-v1.6.0" }
 frame-system = { version = "4.0.0-dev", default-features = false, git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-v1.6.0" }
+sp-std = { default-features = false,  git = "https://github.com/paritytech/polkadot-sdk", tag = "polkadot-v1.6.0" }
 
 pallet-nfts = {  default-features = false, git = "https://github.com/paritytech/polkadot-sdk", tag = "polkadot-v1.6.0" }
 enumflags2 = { version = "0.7.7" }
@@ -44,6 +45,7 @@ std = [
 	"serde",
 	"pallet-nfts/std",
 	"pallet-balances/std",
+	"sp-std/std",
 ]
 runtime-benchmarks = ["frame-benchmarking/runtime-benchmarks"]
 try-runtime = ["frame-support/try-runtime"]

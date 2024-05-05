@@ -1,13 +1,9 @@
 use crate as pallet_game;
-use frame_support::{
-	parameter_types,
-	traits::{AsEnsureOriginWithArg, ConstU64},
-	PalletId,
-};
+use frame_support::{parameter_types, traits::AsEnsureOriginWithArg, PalletId};
 use pallet_nfts::PalletFeatures;
 use sp_core::ConstU32;
 use sp_runtime::{
-	traits::{AccountIdLookup, BlakeTwo256, IdentifyAccount, IdentityLookup, Verify},
+	traits::{AccountIdLookup, BlakeTwo256, IdentifyAccount, Verify},
 	BuildStorage, MultiSignature,
 };
 pub type BlockNumber = u64;

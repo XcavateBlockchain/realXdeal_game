@@ -142,7 +142,9 @@ mod benchmarks {
 		practise_round::<T>(caller2.clone(), 2);
 		assert_ok!(GameModule::<T>::play_game(RawOrigin::Signed(caller2.clone()).into(), crate::DifficultyLevel::Player));
 		assert_ok!(GameModule::<T>::submit_answer(RawOrigin::Signed(caller2.clone()).into(), 220000, 3));
+		assert_eq!(GameModule::<T>::users::<AccountIdOf<T>>(caller2.clone()).unwrap().nfts.xorange, 1);
 		assert_ok!(GameModule::<T>::make_offer(RawOrigin::Signed(caller2.clone()).into(), 0, 0.into(), 1.into()));
+
 		#[extrinsic_call]
 		handle_offer(
 			RawOrigin::Signed(caller2),
