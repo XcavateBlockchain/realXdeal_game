@@ -74,14 +74,14 @@ pub fn new_partial(
 
 		// For pallet-ocw
 		sp_keystore::Keystore::sr25519_generate_new(
-            &*keystore,
-            node_template_runtime::pallet_game::KEY_TYPE,
-            Some("//Alice"),
-        ).expect("Creating key with account Alice should succeed.");
+			&*keystore,
+			node_template_runtime::pallet_game::KEY_TYPE,
+			Some("//Alice"),
+		)
+		.expect("Creating key with account Alice should succeed.");
 
 		// For pallet-example-offchain-worker
 	}
-
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
