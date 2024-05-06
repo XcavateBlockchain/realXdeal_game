@@ -137,6 +137,7 @@ pub mod pallet {
 		pub item_id: ItemId,
 	}
 
+	/// Struct to store the property data for a game.
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
@@ -150,6 +151,7 @@ pub mod pallet {
 		pub key_features: BoundedVec<u8, <T as Config>::StringLimit>,
 	}
 
+	/// Struct for the user datas.
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
@@ -216,30 +218,38 @@ pub mod pallet {
 
 		pub fn subtracting_calculate_points(&mut self, color: NftColor) -> u32 {
 			match color {
+				NftColor::Xorange if self.nfts.xorange == 0 => 100,
 				NftColor::Xorange if self.nfts.xorange == 1 => 120,
-				NftColor::Xorange if self.nfts.xorange == 2 => 100,
-				NftColor::Xorange if self.nfts.xorange == 3 => 120,
+				NftColor::Xorange if self.nfts.xorange == 2 => 220,
+				NftColor::Xorange if self.nfts.xorange == 3 => 340,
+				NftColor::Xpink if self.nfts.xpink == 0 => 100,
 				NftColor::Xpink if self.nfts.xpink == 1 => 120,
-				NftColor::Xpink if self.nfts.xpink == 2 => 100,
-				NftColor::Xpink if self.nfts.xpink == 3 => 120,
+				NftColor::Xpink if self.nfts.xpink == 2 => 220,
+				NftColor::Xpink if self.nfts.xpink == 3 => 340,
+				NftColor::Xblue if self.nfts.xblue == 0 => 100,
 				NftColor::Xblue if self.nfts.xblue == 1 => 120,
-				NftColor::Xblue if self.nfts.xblue == 2 => 100,
-				NftColor::Xblue if self.nfts.xblue == 3 => 120,
+				NftColor::Xblue if self.nfts.xblue == 2 => 220,
+				NftColor::Xblue if self.nfts.xblue == 3 => 340,
+				NftColor::Xcyan if self.nfts.xcyan == 0 => 100,
 				NftColor::Xcyan if self.nfts.xcyan == 1 => 120,
-				NftColor::Xcyan if self.nfts.xcyan == 2 => 100,
-				NftColor::Xcyan if self.nfts.xcyan == 3 => 120,
+				NftColor::Xcyan if self.nfts.xcyan == 2 => 220,
+				NftColor::Xcyan if self.nfts.xcyan == 3 => 340,
+				NftColor::Xcoral if self.nfts.xcoral == 0 => 100,
 				NftColor::Xcoral if self.nfts.xcoral == 1 => 120,
-				NftColor::Xcoral if self.nfts.xcoral == 2 => 100,
-				NftColor::Xcoral if self.nfts.xcoral == 3 => 120,
+				NftColor::Xcoral if self.nfts.xcoral == 2 => 220,
+				NftColor::Xcoral if self.nfts.xcoral == 3 => 340,
+				NftColor::Xpurple if self.nfts.xpurple == 0 => 100,
 				NftColor::Xpurple if self.nfts.xpurple == 1 => 120,
-				NftColor::Xpurple if self.nfts.xpurple == 2 => 100,
-				NftColor::Xpurple if self.nfts.xpurple == 3 => 120,
+				NftColor::Xpurple if self.nfts.xpurple == 2 => 220,
+				NftColor::Xpurple if self.nfts.xpurple == 3 => 340,
+				NftColor::Xleafgreen if self.nfts.xleafgreen == 0 => 100,
 				NftColor::Xleafgreen if self.nfts.xleafgreen == 1 => 120,
-				NftColor::Xleafgreen if self.nfts.xleafgreen == 2 => 100,
-				NftColor::Xleafgreen if self.nfts.xleafgreen == 3 => 120,
+				NftColor::Xleafgreen if self.nfts.xleafgreen == 2 => 220,
+				NftColor::Xleafgreen if self.nfts.xleafgreen == 3 => 340,
+				NftColor::Xgreen if self.nfts.xgreen == 0 => 100,
 				NftColor::Xgreen if self.nfts.xgreen == 1 => 120,
-				NftColor::Xgreen if self.nfts.xgreen == 2 => 100,
-				NftColor::Xgreen if self.nfts.xgreen == 3 => 120,
+				NftColor::Xgreen if self.nfts.xgreen == 2 => 220,
+				NftColor::Xgreen if self.nfts.xgreen == 3 => 340,
 				_ => 0,
 			}
 		}
@@ -388,58 +398,73 @@ pub mod pallet {
 		/// The maximum length of data stored in string.
 		#[pallet::constant]
 		type StringLimit: Get<u32>;
+		/// The maximum length of leaderboard.
+		#[pallet::constant]
+		type LeaderboardLimit: Get<u32>;
 	}
 
 	pub type CollectionId<T> = <T as Config>::CollectionId;
 	pub type ItemId<T> = <T as Config>::ItemId;
 
-	#[pallet::storage]
-	#[pallet::getter(fn stored_hash)]
-	pub type StoredHash<T: Config> = StorageValue<_, T::Hash, OptionQuery>;
-
+	/// The id of the current round.
 	#[pallet::storage]
 	#[pallet::getter(fn current_round)]
 	pub(super) type CurrentRound<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// Bool if there is a round currently ongoing.
 	#[pallet::storage]
 	#[pallet::getter(fn round_active)]
 	pub(super) type RoundActive<T> = StorageValue<_, bool, ValueQuery>;
 
+	/// A mapping of a round to the winner of the round.
 	#[pallet::storage]
 	#[pallet::getter(fn round_champion)]
 	pub(super) type RoundChampion<T: Config> =
 		StorageMap<_, Blake2_128Concat, u32, AccountIdOf<T>, OptionQuery>;
 
+	/// The next item id in a collection.	
 	#[pallet::storage]
 	#[pallet::getter(fn next_color_id)]
 	pub(super) type NextColorId<T: Config> =
 		StorageMap<_, Blake2_128Concat, <T as pallet::Config>::CollectionId, u32, ValueQuery>;
 
+	/// Mapping of a collection to the correlated color.
 	#[pallet::storage]
 	#[pallet::getter(fn collection_color)]
 	pub(super) type CollectionColor<T: Config> =
 		StorageMap<_, Blake2_128Concat, <T as pallet::Config>::CollectionId, NftColor, OptionQuery>;
 
+	/// The next id of listings.
 	#[pallet::storage]
 	#[pallet::getter(fn next_lising_id)]
 	pub(super) type NextListingId<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// The next id of offers.
 	#[pallet::storage]
 	#[pallet::getter(fn next_offer_id)]
 	pub(super) type NextOfferId<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// The next id of game.
 	#[pallet::storage]
 	#[pallet::getter(fn game_id)]
 	pub type GameId<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// The leaderboard of the game.
+	#[pallet::storage]
+	#[pallet::getter(fn leaderboard)]
+	pub type Leaderboard<T> = StorageValue<_, BoundedVec<(AccountIdOf<T>, u32), <T as Config>::LeaderboardLimit>, ValueQuery>;
+
+	/// Mapping of an account id to the user data of the account.
 	#[pallet::storage]
 	#[pallet::getter(fn users)]
 	pub type Users<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, User, OptionQuery>;
 
+	/// Mapping of game id to the game info.
 	#[pallet::storage]
 	#[pallet::getter(fn game_info)]
 	pub type GameInfo<T: Config> = StorageMap<_, Blake2_128Concat, u32, GameData<T>, OptionQuery>;
 
+	/// Mapping of listing id to the listing data.
 	#[pallet::storage]
 	#[pallet::getter(fn listings)]
 	pub type Listings<T: Config> = StorageMap<
@@ -450,6 +475,7 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
+	/// Mapping of offer id to the offer data.
 	#[pallet::storage]
 	#[pallet::getter(fn offers)]
 	pub type Offers<T: Config> = StorageMap<
@@ -460,7 +486,7 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
-	/// Stores the project keys and round types ending on a given block.
+	/// Stores the game keys and round types ending on a given block.
 	#[pallet::storage]
 	pub type GamesExpiring<T: Config> = StorageMap<
 		_,
@@ -470,19 +496,17 @@ pub mod pallet {
 		ValueQuery,
 	>;
 
-	/// A List of test properties
+	/// A List of test properties.
 	#[pallet::storage]
 	#[pallet::getter(fn test_properties)]
 	pub type TestProperties<T: Config> =
 		StorageValue<_, BoundedVec<PropertyInfoData<T>, T::MaxProperty>, ValueQuery>;
 
-	/// Test for properties
+	/// Test for properties.
 	#[pallet::storage]
 	#[pallet::getter(fn test_prices)]
 	pub type TestPrices<T: Config> = StorageMap<_, Blake2_128Concat, u32, u32, OptionQuery>;
 
-	// Pallets use events to inform users when important changes are made.
-	// https://docs.substrate.io/main-docs/build/events-errors/
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
@@ -547,6 +571,8 @@ pub mod pallet {
 		CollectionUnknown,
 		/// There is no active round at the moment.
 		NoActiveRound,
+		/// The player is already registered.
+		PlayerAlreadyRegistered,
 	}
 
 	#[pallet::hooks]
@@ -626,6 +652,7 @@ pub mod pallet {
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::register_user())]
 		pub fn register_user(origin: OriginFor<T>, player: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
+			ensure!(Self::users(player.clone()).is_none(), Error::<T>::PlayerAlreadyRegistered);
 			let user = User {
 				points: 50,
 				wins: Default::default(),
@@ -698,7 +725,6 @@ pub mod pallet {
 				})?;
 			}
 			let (hashi, _) = T::GameRandomness::random(&[(game_id % 256) as u8]);
-			StoredHash::<T>::put(hashi);
 			let u32_value = u32::from_le_bytes(
 				hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
 			);
@@ -976,6 +1002,8 @@ pub mod pallet {
 					.checked_sub(points)
 					.ok_or(Error::<T>::ArithmeticUnderflow)?;
 				Users::<T>::insert(signer.clone(), user_listing.clone());
+				Self::update_leaderboard(signer.clone(), user_listing.points)?;
+				Self::update_leaderboard(offer_details.owner.clone(), user_offer.points)?;
 				if user_listing.has_four_of_all_colors() {
 					Self::end_game(signer.clone());
 				}
@@ -1049,7 +1077,6 @@ pub mod pallet {
 				match difference {
 					0..=10 => {
 						let (hashi, _) = T::GameRandomness::random(&[game_id as u8]);
-						StoredHash::<T>::put(hashi);
 						let u32_value = u32::from_le_bytes(
 							hashi.as_ref()[4..8]
 								.try_into()
@@ -1160,7 +1187,6 @@ pub mod pallet {
 				match difference {
 					0..=10 => {
 						let (hashi, _) = T::GameRandomness::random(&[game_id as u8]);
-						StoredHash::<T>::put(hashi);
 						let u32_value = u32::from_le_bytes(
 							hashi.as_ref()[4..8]
 								.try_into()
@@ -1274,6 +1300,28 @@ pub mod pallet {
 				user.practise_rounds =
 					user.practise_rounds.checked_add(1).ok_or(Error::<T>::ArithmeticUnderflow)?;
 				Users::<T>::insert(game_info.player.clone(), user);
+			}
+			let mut user =
+				Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			Self::update_leaderboard(game_info.player, user.points)?;
+			Ok(())
+		}
+
+		fn update_leaderboard(user_id: AccountIdOf<T>, new_points: u32) -> DispatchResult {
+			let mut leaderboard = Self::leaderboard();
+			let leaderboard_size = leaderboard.len();
+		
+			if let Some((_, user_points)) = leaderboard.iter_mut().find(|(id, _)| *id == user_id) {
+				*user_points = new_points;
+				leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+				return Ok(());
+			}
+			if new_points > 0 && (leaderboard_size < 10 || new_points > leaderboard.last().map(|(_, points)| *points).unwrap_or(0)) {
+				if leaderboard.len() >= 10 {
+					leaderboard.pop();
+				}
+				leaderboard.try_push((user_id, new_points)).map_err(|_| Error::<T>::InvalidIndex)?;
+				leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
 			}
 			Ok(())
 		}

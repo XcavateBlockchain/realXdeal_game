@@ -414,8 +414,8 @@ fn handle_offer_accept_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
-		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
+		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		practise_round([1; 32].into(), 2);
 		assert_ok!(GameModule::play_game(
@@ -423,6 +423,19 @@ fn handle_offer_accept_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 4));
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 275);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 5));
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().nfts.xorange, 3);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 495);
 		assert_eq!(GameModule::users::<AccountId>([1; 32].into()).unwrap().nfts.xorange, 1);
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(RuntimeOrigin::signed([0; 32].into()), 0, 0,));
@@ -439,9 +452,9 @@ fn handle_offer_accept_works() {
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [0; 32].into());
 		assert_eq!(GameModule::offers(0).is_none(), true);
 		assert_eq!(GameModule::listings(0).is_none(), true);
-		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().nfts.xorange, 1);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().nfts.xorange, 3);
 		assert_eq!(GameModule::users::<AccountId>([1; 32].into()).unwrap().nfts.xorange, 1);
-		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 495);
 		assert_eq!(GameModule::users::<AccountId>([1; 32].into()).unwrap().points, 155);
 		assert_noop!(
 			Nfts::transfer(

@@ -2,12 +2,12 @@
 name = "pallet-game"
 version = "4.0.0-dev"
 description = "Game pallet for defining game logic."
-authors = ["Substrate DevHub <https://github.com/substrate-developer-hub>"]
-homepage = "https://substrate.io"
+authors = ["Xcavate Network"]
+homepage = "https://xcavate.io"
 edition = "2021"
-license = "MIT-0"
+license = "Apache-2.0"
 publish = false
-repository = "https://github.com/substrate-developer-hub/substrate-node-template/"
+repository = "https://github.com/XcavateBlockchain/Node_Hackathon_Apr2024"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
