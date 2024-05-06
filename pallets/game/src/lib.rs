@@ -66,18 +66,8 @@ use sp_runtime::{
 };
 use sp_std::vec::Vec;
 
-/// Defines application identifier for crypto keys of this module.
-///
-/// Every module that deals with signatures needs to declare its unique identifier for
-/// its crypto keys.
-/// When offchain worker is signing transactions it's going to request keys of type
-/// `KeyTypeId` from the keystore and use the ones it finds to sign the transaction.
-/// The keys can be inserted manually via RPC (see `author_insertKey`).
 pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"btc!");
 
-/// Based on the above `KeyTypeId` we need to generate a pallet-specific crypto type wrappers.
-/// We can use from supported crypto kinds (`sr25519`, `ed25519` and `ecdsa`) and augment
-/// the types with this pallet-specific identifier.
 pub mod crypto {
 	use super::KEY_TYPE;
 	use sp_core::sr25519::Signature as Sr25519Signature;
@@ -673,37 +663,15 @@ pub mod pallet {
 			weight
 		}
 
-		/// Offchain Worker entry point.
-		///
-		/// By implementing `fn offchain_worker` you declare a new offchain worker.
-		/// This function will be called when the node is fully synced and a new best block is
-		/// successfully imported.
-		/// Note that it's not guaranteed for offchain workers to run on EVERY block, there might
-		/// be cases where some blocks are skipped, or for some the worker runs twice (re-orgs),
-		/// so the code should be able to handle that.
-		/// You can use `Local Storage` API to coordinate runs of the worker.
 		fn offchain_worker(block_number: BlockNumberFor<T>) {
-			// Note that having logs compiled to WASM may cause the size of the blob to increase
-			// significantly. You can use `RuntimeDebug` custom derive to hide details of the types
-			// in WASM. The `sp-api` crate also provides a feature `disable-logging` to disable
-			// all logging and thus, remove any logging from the WASM.
 			log::info!("Hello World from offchain workers!");
-			//TestProperties::<T>::put(price.unwrap());
 
-			// Since off-chain workers are just part of the runtime code, they have direct access
-			// to the storage and other included pallets.
-			//
-			// We can easily import `frame_system` and retrieve a block hash of the parent block.
 			let parent_hash = <system::Pallet<T>>::block_hash(block_number - 1u32.into());
 			log::debug!("Current block: {:?} (parent hash: {:?})", block_number, parent_hash);
 
-			//Self::fetch_property_and_send_signed();
 		}
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Creates the setup for a new game.
@@ -1434,6 +1402,7 @@ pub mod pallet {
 			if let Some((_, user_points)) = leaderboard.iter_mut().find(|(id, _)| *id == user_id) {
 				*user_points = new_points;
 				leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+				Leaderboard::<T>::put(leaderboard);
 				return Ok(());
 			}
 			if new_points > 0 &&
@@ -1447,6 +1416,7 @@ pub mod pallet {
 					.try_push((user_id, new_points))
 					.map_err(|_| Error::<T>::InvalidIndex)?;
 				leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+				Leaderboard::<T>::put(leaderboard);
 			}
 			Ok(())
 		}

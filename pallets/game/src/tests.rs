@@ -123,6 +123,41 @@ fn submit_answer_works() {
 }
 
 #[test]
+fn leaderboard_works() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
+		assert_eq!(GameModule::test_properties().len(), 4);
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [1; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::root(), [2; 32].into()));
+		practise_round([0; 32].into(), 0);
+		practise_round([1; 32].into(), 1);
+		practise_round([2; 32].into(), 2);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 230_000, 3));
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([1; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 225_000, 4));
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([2; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([2; 32].into()), 220_000, 5));
+		assert_eq!(GameModule::game_info(0).is_none(), true);
+		assert_eq!(GameModule::users::<AccountId>([2; 32].into()).unwrap().points, 155);
+		assert_eq!(GameModule::users::<AccountId>([1; 32].into()).unwrap().points, 80);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 70);
+		assert_eq!(GameModule::leaderboard().len(), 3);
+	});
+}
+
+#[test]
 fn submit_answer_fails() {
 	new_test_ext().execute_with(|| {
 		System::set_block_number(1);
