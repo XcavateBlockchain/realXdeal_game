@@ -15,7 +15,7 @@ mod tests;
 mod benchmarking;
 pub mod weights;
 pub use weights::*;
-
+pub mod offchain_function;
 pub mod properties;
 
 type AccountIdOf<T> = <T as frame_system::Config>::AccountId;
@@ -42,6 +42,59 @@ use frame_system::RawOrigin;
 use enumflags2::BitFlags;
 
 use frame_support::traits::Randomness;
+
+use codec::{Decode, Encode};
+use frame_support::traits::Get;
+use frame_system::{
+	self as system,
+	offchain::{
+		AppCrypto, CreateSignedTransaction, SendSignedTransaction,
+		Signer,
+	},
+	pallet_prelude::BlockNumberFor,
+};
+use lite_json::json::JsonValue;
+use scale_info::prelude::string::String;
+use sp_core::crypto::KeyTypeId;
+
+use sp_runtime::{
+	offchain::{
+		http,
+		Duration,
+	},
+	BoundedVec, RuntimeDebug,
+};
+use sp_std::vec::Vec;
+
+pub const KEY_TYPE: KeyTypeId = KeyTypeId(*b"btc!");
+
+pub mod crypto {
+	use super::KEY_TYPE;
+	use sp_core::sr25519::Signature as Sr25519Signature;
+	use sp_runtime::{
+		app_crypto::{app_crypto, sr25519},
+		traits::Verify,
+		MultiSignature, MultiSigner,
+	};
+	app_crypto!(sr25519, KEY_TYPE);
+
+	pub struct TestAuthId;
+
+	impl frame_system::offchain::AppCrypto<MultiSigner, MultiSignature> for TestAuthId {
+		type RuntimeAppPublic = Public;
+		type GenericSignature = sp_core::sr25519::Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+
+	// implemented for mock runtime in test
+	impl frame_system::offchain::AppCrypto<<Sr25519Signature as Verify>::Signer, Sr25519Signature>
+		for TestAuthId
+	{
+		type RuntimeAppPublic = Public;
+		type GenericSignature = sp_core::sr25519::Signature;
+		type GenericPublic = sp_core::sr25519::Public;
+	}
+}
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -137,19 +190,32 @@ pub mod pallet {
 		pub item_id: ItemId,
 	}
 
+	/// Struct to store the property data for a game.
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
-	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
+	#[derive(
+		Encode,
+		Decode,
+		Clone,
+		PartialEq,
+		Eq,
+		MaxEncodedLen,
+		frame_support::pallet_prelude::RuntimeDebugNoBound,
+		TypeInfo,
+	)]
 	#[scale_info(skip_type_params(T))]
 	pub struct PropertyInfoData<T: Config> {
 		pub id: u32,
-		pub property_type: BoundedVec<u8, <T as Config>::StringLimit>,
 		pub bedrooms: u32,
 		pub bathrooms: u32,
-		pub city: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub post_code: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub key_features: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub summary: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub property_sub_type: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub first_visible_date: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub display_size: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub display_address: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub property_images1: BoundedVec<u8, <T as Config>::StringLimit>,
 	}
 
+	/// Struct for the user datas.
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
@@ -158,6 +224,7 @@ pub mod pallet {
 		pub wins: u32,
 		pub losses: u32,
 		pub practise_rounds: u8,
+		pub last_played_round: u32,
 		pub nfts: CollectedColors,
 	}
 
@@ -216,30 +283,38 @@ pub mod pallet {
 
 		pub fn subtracting_calculate_points(&mut self, color: NftColor) -> u32 {
 			match color {
+				NftColor::Xorange if self.nfts.xorange == 0 => 100,
 				NftColor::Xorange if self.nfts.xorange == 1 => 120,
-				NftColor::Xorange if self.nfts.xorange == 2 => 100,
-				NftColor::Xorange if self.nfts.xorange == 3 => 120,
+				NftColor::Xorange if self.nfts.xorange == 2 => 220,
+				NftColor::Xorange if self.nfts.xorange == 3 => 340,
+				NftColor::Xpink if self.nfts.xpink == 0 => 100,
 				NftColor::Xpink if self.nfts.xpink == 1 => 120,
-				NftColor::Xpink if self.nfts.xpink == 2 => 100,
-				NftColor::Xpink if self.nfts.xpink == 3 => 120,
+				NftColor::Xpink if self.nfts.xpink == 2 => 220,
+				NftColor::Xpink if self.nfts.xpink == 3 => 340,
+				NftColor::Xblue if self.nfts.xblue == 0 => 100,
 				NftColor::Xblue if self.nfts.xblue == 1 => 120,
-				NftColor::Xblue if self.nfts.xblue == 2 => 100,
-				NftColor::Xblue if self.nfts.xblue == 3 => 120,
+				NftColor::Xblue if self.nfts.xblue == 2 => 220,
+				NftColor::Xblue if self.nfts.xblue == 3 => 340,
+				NftColor::Xcyan if self.nfts.xcyan == 0 => 100,
 				NftColor::Xcyan if self.nfts.xcyan == 1 => 120,
-				NftColor::Xcyan if self.nfts.xcyan == 2 => 100,
-				NftColor::Xcyan if self.nfts.xcyan == 3 => 120,
+				NftColor::Xcyan if self.nfts.xcyan == 2 => 220,
+				NftColor::Xcyan if self.nfts.xcyan == 3 => 340,
+				NftColor::Xcoral if self.nfts.xcoral == 0 => 100,
 				NftColor::Xcoral if self.nfts.xcoral == 1 => 120,
-				NftColor::Xcoral if self.nfts.xcoral == 2 => 100,
-				NftColor::Xcoral if self.nfts.xcoral == 3 => 120,
+				NftColor::Xcoral if self.nfts.xcoral == 2 => 220,
+				NftColor::Xcoral if self.nfts.xcoral == 3 => 340,
+				NftColor::Xpurple if self.nfts.xpurple == 0 => 100,
 				NftColor::Xpurple if self.nfts.xpurple == 1 => 120,
-				NftColor::Xpurple if self.nfts.xpurple == 2 => 100,
-				NftColor::Xpurple if self.nfts.xpurple == 3 => 120,
+				NftColor::Xpurple if self.nfts.xpurple == 2 => 220,
+				NftColor::Xpurple if self.nfts.xpurple == 3 => 340,
+				NftColor::Xleafgreen if self.nfts.xleafgreen == 0 => 100,
 				NftColor::Xleafgreen if self.nfts.xleafgreen == 1 => 120,
-				NftColor::Xleafgreen if self.nfts.xleafgreen == 2 => 100,
-				NftColor::Xleafgreen if self.nfts.xleafgreen == 3 => 120,
+				NftColor::Xleafgreen if self.nfts.xleafgreen == 2 => 220,
+				NftColor::Xleafgreen if self.nfts.xleafgreen == 3 => 340,
+				NftColor::Xgreen if self.nfts.xgreen == 0 => 100,
 				NftColor::Xgreen if self.nfts.xgreen == 1 => 120,
-				NftColor::Xgreen if self.nfts.xgreen == 2 => 100,
-				NftColor::Xgreen if self.nfts.xgreen == 3 => 120,
+				NftColor::Xgreen if self.nfts.xgreen == 2 => 220,
+				NftColor::Xgreen if self.nfts.xgreen == 3 => 340,
 				_ => 0,
 			}
 		}
@@ -350,7 +425,9 @@ pub mod pallet {
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
-	pub trait Config: frame_system::Config + pallet_nfts::Config //+ pallet_babe::Config
+	pub trait Config:
+		frame_system::Config + pallet_nfts::Config
+	//+ pallet_babe::Config
 	{
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
@@ -388,58 +465,77 @@ pub mod pallet {
 		/// The maximum length of data stored in string.
 		#[pallet::constant]
 		type StringLimit: Get<u32>;
+		/// The maximum length of leaderboard.
+		#[pallet::constant]
+		type LeaderboardLimit: Get<u32>;
 	}
 
 	pub type CollectionId<T> = <T as Config>::CollectionId;
 	pub type ItemId<T> = <T as Config>::ItemId;
 
-	#[pallet::storage]
-	#[pallet::getter(fn stored_hash)]
-	pub type StoredHash<T: Config> = StorageValue<_, T::Hash, OptionQuery>;
-
+	/// The id of the current round.
 	#[pallet::storage]
 	#[pallet::getter(fn current_round)]
 	pub(super) type CurrentRound<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// Bool if there is a round currently ongoing.
 	#[pallet::storage]
 	#[pallet::getter(fn round_active)]
 	pub(super) type RoundActive<T> = StorageValue<_, bool, ValueQuery>;
 
+	/// A mapping of a round to the winner of the round.
 	#[pallet::storage]
 	#[pallet::getter(fn round_champion)]
 	pub(super) type RoundChampion<T: Config> =
 		StorageMap<_, Blake2_128Concat, u32, AccountIdOf<T>, OptionQuery>;
 
+	/// The next item id in a collection.
 	#[pallet::storage]
 	#[pallet::getter(fn next_color_id)]
 	pub(super) type NextColorId<T: Config> =
 		StorageMap<_, Blake2_128Concat, <T as pallet::Config>::CollectionId, u32, ValueQuery>;
 
+	/// Mapping of a collection to the correlated color.
 	#[pallet::storage]
 	#[pallet::getter(fn collection_color)]
 	pub(super) type CollectionColor<T: Config> =
 		StorageMap<_, Blake2_128Concat, <T as pallet::Config>::CollectionId, NftColor, OptionQuery>;
 
+	/// The next id of listings.
 	#[pallet::storage]
 	#[pallet::getter(fn next_lising_id)]
 	pub(super) type NextListingId<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// The next id of offers.
 	#[pallet::storage]
 	#[pallet::getter(fn next_offer_id)]
 	pub(super) type NextOfferId<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// The next id of game.
 	#[pallet::storage]
 	#[pallet::getter(fn game_id)]
 	pub type GameId<T> = StorageValue<_, u32, ValueQuery>;
 
+	/// The leaderboard of the game.
+	#[pallet::storage]
+	#[pallet::getter(fn leaderboard)]
+	pub type Leaderboard<T> = StorageValue<
+		_,
+		BoundedVec<(AccountIdOf<T>, u32), <T as Config>::LeaderboardLimit>,
+		ValueQuery,
+	>;
+
+	/// Mapping of an account id to the user data of the account.
 	#[pallet::storage]
 	#[pallet::getter(fn users)]
 	pub type Users<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, User, OptionQuery>;
 
+	/// Mapping of game id to the game info.
 	#[pallet::storage]
 	#[pallet::getter(fn game_info)]
 	pub type GameInfo<T: Config> = StorageMap<_, Blake2_128Concat, u32, GameData<T>, OptionQuery>;
 
+	/// Mapping of listing id to the listing data.
 	#[pallet::storage]
 	#[pallet::getter(fn listings)]
 	pub type Listings<T: Config> = StorageMap<
@@ -450,6 +546,7 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
+	/// Mapping of offer id to the offer data.
 	#[pallet::storage]
 	#[pallet::getter(fn offers)]
 	pub type Offers<T: Config> = StorageMap<
@@ -460,7 +557,7 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
-	/// Stores the project keys and round types ending on a given block.
+	/// Stores the game keys and round types ending on a given block.
 	#[pallet::storage]
 	pub type GamesExpiring<T: Config> = StorageMap<
 		_,
@@ -481,8 +578,6 @@ pub mod pallet {
 	#[pallet::getter(fn test_prices)]
 	pub type TestPrices<T: Config> = StorageMap<_, Blake2_128Concat, u32, u32, OptionQuery>;
 
-	// Pallets use events to inform users when important changes are made.
-	// https://docs.substrate.io/main-docs/build/events-errors/
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
@@ -547,6 +642,8 @@ pub mod pallet {
 		CollectionUnknown,
 		/// There is no active round at the moment.
 		NoActiveRound,
+		/// The player is already registered.
+		PlayerAlreadyRegistered,
 	}
 
 	#[pallet::hooks]
@@ -565,11 +662,16 @@ pub mod pallet {
 			});
 			weight
 		}
+
+		fn offchain_worker(block_number: BlockNumberFor<T>) {
+			log::info!("Hello World from offchain workers!");
+
+			let parent_hash = <system::Pallet<T>>::block_hash(block_number - 1u32.into());
+			log::debug!("Current block: {:?} (parent hash: {:?})", block_number, parent_hash);
+
+		}
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Creates the setup for a new game.
@@ -626,11 +728,13 @@ pub mod pallet {
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::register_user())]
 		pub fn register_user(origin: OriginFor<T>, player: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
+			ensure!(Self::users(player.clone()).is_none(), Error::<T>::PlayerAlreadyRegistered);
 			let user = User {
 				points: 50,
 				wins: Default::default(),
 				losses: Default::default(),
 				practise_rounds: Default::default(),
+				last_played_round: Default::default(),
 				nfts: CollectedColors::default(),
 			};
 			Users::<T>::insert(player.clone(), user);
@@ -671,6 +775,12 @@ pub mod pallet {
 			let signer = ensure_signed(origin)?;
 			Self::check_enough_points(signer.clone(), game_type.clone())?;
 			ensure!(Self::round_active(), Error::<T>::NoActiveRound);
+			let mut user = Self::users(signer.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			if Self::current_round() != user.last_played_round {
+				user.nfts == Default::default();
+				user.last_played_round = user.last_played_round.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+				Users::<T>::insert(signer.clone(), user);
+			}
 			let game_id = Self::game_id();
 			if game_type == DifficultyLevel::Player {
 				let current_block_number = <frame_system::Pallet<T>>::block_number();
@@ -698,7 +808,6 @@ pub mod pallet {
 				})?;
 			}
 			let (hashi, _) = T::GameRandomness::random(&[(game_id % 256) as u8]);
-			StoredHash::<T>::put(hashi);
 			let u32_value = u32::from_le_bytes(
 				hashi.as_ref()[4..8].try_into().map_err(|_| Error::<T>::ConversionError)?,
 			);
@@ -912,7 +1021,7 @@ pub mod pallet {
 		///
 		/// Emits `OfferHandeld` event when succesfful.
 		#[pallet::call_index(9)]
-		#[pallet::weight(<T as pallet::Config>::WeightInfo::handle_offer())]
+		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
 		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
@@ -945,43 +1054,17 @@ pub mod pallet {
 				)?;
 				Listings::<T>::take(offer_details.listing_id)
 					.ok_or(Error::<T>::ListingDoesNotExist)?;
-				let mut user_offer = Self::users(offer_details.owner.clone())
-					.ok_or(Error::<T>::UserNotRegistered)?;
-				let color_listing = Self::collection_color(listing_details.collection_id)
-					.ok_or(Error::<T>::CollectionUnknown)?;
-				let color_offer = Self::collection_color(offer_details.collection_id)
-					.ok_or(Error::<T>::CollectionUnknown)?;
-				user_offer.add_nft_color(color_listing.clone())?;
-				let points = user_offer.calculate_points(color_listing.clone());
-				user_offer.points =
-					user_offer.points.checked_add(points).ok_or(Error::<T>::ArithmeticOverflow)?;
- 				user_offer.sub_nft_color(color_offer.clone())?;
-				let points = user_offer.subtracting_calculate_points(color_offer.clone());
-				user_offer.points =
-					user_offer.points.checked_sub(points).ok_or(Error::<T>::ArithmeticOverflow)?; 
-				Users::<T>::insert(offer_details.owner.clone(), user_offer.clone());
 
-				let mut user_listing =
-					Self::users(signer.clone()).ok_or(Error::<T>::UserNotRegistered)?;
-				user_listing.add_nft_color(color_offer.clone())?;
-				let points = user_listing.calculate_points(color_offer);
-				user_listing.points = user_listing
-					.points
-					.checked_add(points)
-					.ok_or(Error::<T>::ArithmeticOverflow)?;
-				user_listing.sub_nft_color(color_listing.clone())?;
-				let points = user_listing.subtracting_calculate_points(color_listing);
-				user_listing.points = user_listing
-					.points
-					.checked_sub(points)
-					.ok_or(Error::<T>::ArithmeticUnderflow)?;
-				Users::<T>::insert(signer.clone(), user_listing.clone());
-				if user_listing.has_four_of_all_colors() {
-					Self::end_game(signer.clone());
-				}
-				if user_offer.has_four_of_all_colors() {
-					Self::end_game(offer_details.owner.clone());
-				}
+				Self::swap_user_points(
+					offer_details.owner.clone(),
+					listing_details.collection_id,
+					offer_details.collection_id,
+				)?;
+				Self::swap_user_points(
+					signer.clone(),
+					offer_details.collection_id,
+					listing_details.collection_id,
+				)?;
 			} else {
 				pallet_nfts::Pallet::<T>::do_transfer(
 					offer_details.collection_id.into(),
@@ -996,6 +1079,39 @@ pub mod pallet {
 				)?;
 			}
 			Self::deposit_event(Event::<T>::OfferHandeld { offer_id, offer });
+			Ok(())
+		}
+
+		/// Add a new property and the price.
+		///
+		/// The origin must be the sudo.
+		///
+		/// Parameters:
+		/// - `property`: The new property that will be added.
+		/// - `price`: The price of the property that will be added.
+		#[pallet::call_index(10)]
+		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		pub fn add_property(origin: OriginFor<T>, property: PropertyInfoData<T>, price: u32) -> DispatchResult {
+			T::GameOrigin::ensure_origin(origin)?;
+			TestProperties::<T>::try_append(property.clone()).map_err(|_| Error::<T>::TooManyTest)?;
+			TestPrices::<T>::insert(property.id, price);
+			Ok(())
+		}
+
+		/// Remove a new property and the price.
+		///
+		/// The origin must be the sudo.
+		///
+		/// Parameters:
+		/// - `id`: The id of the property that should be removed.
+		#[pallet::call_index(11)]
+		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		pub fn remove_property(origin: OriginFor<T>, id: u32) -> DispatchResult {
+			T::GameOrigin::ensure_origin(origin)?;
+			let mut properties = TestProperties::<T>::take();
+			properties.retain(|property| property.id != id);
+			TestProperties::<T>::put(properties);
+			TestPrices::<T>::take(id);
 			Ok(())
 		}
 	}
@@ -1049,7 +1165,6 @@ pub mod pallet {
 				match difference {
 					0..=10 => {
 						let (hashi, _) = T::GameRandomness::random(&[game_id as u8]);
-						StoredHash::<T>::put(hashi);
 						let u32_value = u32::from_le_bytes(
 							hashi.as_ref()[4..8]
 								.try_into()
@@ -1096,7 +1211,7 @@ pub mod pallet {
 							.ok_or(Error::<T>::ArithmeticOverflow)?;
 						Users::<T>::insert(game_info.player.clone(), user.clone());
 						if user.has_four_of_all_colors() {
-							Self::end_game(game_info.player.clone());
+							Self::end_game(game_info.player.clone())?;
 						}
 					},
 					11..=30 => {
@@ -1160,7 +1275,6 @@ pub mod pallet {
 				match difference {
 					0..=10 => {
 						let (hashi, _) = T::GameRandomness::random(&[game_id as u8]);
-						StoredHash::<T>::put(hashi);
 						let u32_value = u32::from_le_bytes(
 							hashi.as_ref()[4..8]
 								.try_into()
@@ -1207,7 +1321,7 @@ pub mod pallet {
 							.ok_or(Error::<T>::ArithmeticOverflow)?;
 						Users::<T>::insert(game_info.player.clone(), user.clone());
 						if user.has_four_of_all_colors() {
-							Self::end_game(game_info.player.clone());
+							Self::end_game(game_info.player.clone())?;
 						}
 					},
 					11..=30 => {
@@ -1274,6 +1388,59 @@ pub mod pallet {
 				user.practise_rounds =
 					user.practise_rounds.checked_add(1).ok_or(Error::<T>::ArithmeticUnderflow)?;
 				Users::<T>::insert(game_info.player.clone(), user);
+			}
+			let user =
+				Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			Self::update_leaderboard(game_info.player, user.points)?;
+			Ok(())
+		}
+
+		fn update_leaderboard(user_id: AccountIdOf<T>, new_points: u32) -> DispatchResult {
+			let mut leaderboard = Self::leaderboard();
+			let leaderboard_size = leaderboard.len();
+
+			if let Some((_, user_points)) = leaderboard.iter_mut().find(|(id, _)| *id == user_id) {
+				*user_points = new_points;
+				leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+				Leaderboard::<T>::put(leaderboard);
+				return Ok(());
+			}
+			if new_points > 0 &&
+				(leaderboard_size < 10 ||
+					new_points > leaderboard.last().map(|(_, points)| *points).unwrap_or(0))
+			{
+				if leaderboard.len() >= 10 {
+					leaderboard.pop();
+				}
+				leaderboard
+					.try_push((user_id, new_points))
+					.map_err(|_| Error::<T>::InvalidIndex)?;
+				leaderboard.sort_by(|a, b| b.1.cmp(&a.1));
+				Leaderboard::<T>::put(leaderboard);
+			}
+			Ok(())
+		}
+
+		fn swap_user_points(
+			nft_holder: AccountIdOf<T>,
+			collection_id_add: CollectionId<T>,
+			collection_id_sub: CollectionId<T>,
+		) -> DispatchResult {
+			let mut user = Self::users(nft_holder.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			let color_add =
+				Self::collection_color(collection_id_add).ok_or(Error::<T>::CollectionUnknown)?;
+			let color_sub =
+				Self::collection_color(collection_id_sub).ok_or(Error::<T>::CollectionUnknown)?;
+			user.add_nft_color(color_add.clone())?;
+			let points = user.calculate_points(color_add);
+			user.points = user.points.checked_add(points).ok_or(Error::<T>::ArithmeticOverflow)?;
+			user.sub_nft_color(color_sub.clone())?;
+			let points = user.subtracting_calculate_points(color_sub);
+			user.points = user.points.checked_sub(points).ok_or(Error::<T>::ArithmeticOverflow)?;
+			Users::<T>::insert(nft_holder.clone(), user.clone());
+			Self::update_leaderboard(nft_holder.clone(), user.points)?;
+			if user.has_four_of_all_colors() {
+				Self::end_game(nft_holder)?;
 			}
 			Ok(())
 		}
