@@ -734,7 +734,7 @@ pub mod pallet {
 			ensure!(Self::round_active(), Error::<T>::NoActiveRound);
 			let mut user = Self::users(signer.clone()).ok_or(Error::<T>::UserNotRegistered)?;
 			if Self::current_round() != user.last_played_round {
-				user.nfts == Default::default();
+				user.nfts = Default::default();
 				user.last_played_round = user.last_played_round.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
 				Users::<T>::insert(signer.clone(), user);
 			}
@@ -805,7 +805,7 @@ pub mod pallet {
 			.checked_div(result as i32)
 			.ok_or(Error::<T>::DivisionError)?
 			.abs();
-			Self::check_result(difference_value.try_into().unwrap(), game_id)?;
+			Self::check_result(difference_value.try_into().map_err(|_| Error::<T>::ConversionError)?, game_id)?;
 			Self::deposit_event(Event::<T>::AnswerSubmitted { player: signer, game_id });
 			Ok(())
 		}
@@ -1088,7 +1088,6 @@ pub mod pallet {
 				!Self::admins().contains(&new_admin),
 				Error::<T>::AccountAlreadyAdmin,
 			);
-			let mut admins = Self::admins();
 			Admins::<T>::try_append(new_admin.clone())
 			.map_err(|_| Error::<T>::TooManyAdmins)?;
 			Self::deposit_event(Event::<T>::NewAdminAdded { new_admin });
