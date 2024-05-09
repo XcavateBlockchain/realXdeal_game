@@ -269,6 +269,7 @@ parameter_types! {
 	pub const GamePalletId: PalletId = PalletId(*b"py/rlxdl");
 	pub const MaxOngoingGame: u32 = 200;
 	pub const LeaderLimit: u32 = 10;
+	pub const MaxAdmin: u32 = 10;
 }
 
 /// Configure the pallet-game in pallets/game.
@@ -284,6 +285,7 @@ impl pallet_game::Config for Runtime {
 	type GameRandomness = RandomnessCollectiveFlip;
 	type StringLimit = StringLimit;
 	type LeaderboardLimit = LeaderLimit;
+	type MaxAdmins = MaxAdmin;
 }
 
 parameter_types! {
