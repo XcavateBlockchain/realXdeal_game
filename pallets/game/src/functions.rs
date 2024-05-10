@@ -336,14 +336,13 @@ impl<T: Config> Pallet<T> {
 			if game_info.difficulty == DifficultyLevel::Pro {
 				let mut user =
 					Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
-				user.points = user.points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				user.points = user.points.checked_sub(50).ok_or(Error::<T>::ArithmeticUnderflow)?;
 				Users::<T>::insert(game_info.player.clone(), user);
 			} else if game_info.difficulty == DifficultyLevel::Player {
 				let mut user =
 					Self::users(game_info.player.clone()).ok_or(Error::<T>::UserNotRegistered)?;
-				user.points = user.points.checked_sub(10).ok_or(Error::<T>::ArithmeticUnderflow)?;
+				user.points = user.points.checked_sub(25).ok_or(Error::<T>::ArithmeticUnderflow)?;
 				Users::<T>::insert(game_info.player.clone(), user);
-			} else {
 			}
 			Ok(())
 		}

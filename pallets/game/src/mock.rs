@@ -132,11 +132,13 @@ parameter_types! {
 	pub const MaxOngoingGame: u32 = 200;
 	pub const LeaderLimit: u32 = 10;
 	pub const MaxAdmin: u32 = 10;
+	pub const RequestLimits: BlockNumber = 180;
 }
 
 /// Configure the pallet-game in pallets/game.
 impl pallet_game::Config for Test {
 	type RuntimeEvent = RuntimeEvent;
+	type Currency = Balances;
 	type WeightInfo = pallet_game::weights::SubstrateWeight<Test>;
 	type GameOrigin = EnsureRoot<Self::AccountId>;
 	type CollectionId = u32;
@@ -148,6 +150,7 @@ impl pallet_game::Config for Test {
 	type StringLimit = ConstU32<5000>;
 	type LeaderboardLimit = LeaderLimit;
 	type MaxAdmins = MaxAdmin;
+	type RequestLimit = RequestLimits;
 }
 
 // Build genesis storage according to the mock runtime.

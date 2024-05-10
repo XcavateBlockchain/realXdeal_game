@@ -733,3 +733,27 @@ fn remove_property_works() {
 		assert_eq!(GameModule::test_properties().len(), 3);
 	});
 }
+
+#[test]
+fn request_token_works() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
+		assert_ok!(GameModule::add_to_admins(RuntimeOrigin::root(), [4; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::signed([4; 32].into()), [0; 32].into()));
+		System::set_block_number(100802);
+		assert_ok!(GameModule::request_token(RuntimeOrigin::signed([0; 32].into())));
+	});
+}
+
+#[test]
+fn request_token_doesnt_works() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
+		assert_noop!(GameModule::request_token(RuntimeOrigin::signed([0; 32].into())), Error::<Test>::UserNotRegistered);
+		assert_ok!(GameModule::add_to_admins(RuntimeOrigin::root(), [4; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::signed([4; 32].into()), [0; 32].into()));
+		assert_noop!(GameModule::request_token(RuntimeOrigin::signed([0; 32].into())), Error::<Test>::CantRequestToken);
+	});
+}

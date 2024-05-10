@@ -24,7 +24,7 @@ type BalanceOf<T> = <<T as pallet_nfts::Config>::Currency as Currency<
 >>::Balance;
 
 use frame_support::{
-	traits::{Currency, Incrementable},
+	traits::{Currency, Incrementable, ReservableCurrency},
 	PalletId,
 };
 
@@ -166,16 +166,17 @@ pub mod pallet {
 	#[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 	#[derive(Encode, Decode, Clone, PartialEq, Eq, MaxEncodedLen, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
-	pub struct User {
+	pub struct User<T: Config> {
 		pub points: u32,
 		pub wins: u32,
 		pub losses: u32,
 		pub practise_rounds: u8,
 		pub last_played_round: u32,
+		pub next_token_request: BlockNumberFor<T>,
 		pub nfts: CollectedColors,
 	}
 
-	impl User {
+	impl<T: pallet::Config> User<T> {
 		pub fn add_nft_color(&mut self, color: NftColor) -> DispatchResult {
 			self.nfts.add_nft_color(color)?;
 			Ok(())
@@ -378,6 +379,8 @@ pub mod pallet {
 	{
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type RuntimeEvent: From<Event<Self>> + IsType<<Self as frame_system::Config>::RuntimeEvent>;
+		/// The currency type.
+		type Currency: Currency<AccountIdOf<Self>> + ReservableCurrency<AccountIdOf<Self>>;
 		/// Type representing the weight of this pallet
 		type WeightInfo: WeightInfo;
 		/// Origin who can create a new game.
@@ -417,6 +420,8 @@ pub mod pallet {
 		type LeaderboardLimit: Get<u32>;
 		#[pallet::constant]
 		type MaxAdmins: Get<u32>;
+		/// The amount of time until player can request more token.
+		type RequestLimit: Get<BlockNumberFor<Self>>;
 	}
 
 	pub type CollectionId<T> = <T as Config>::CollectionId;
@@ -477,7 +482,7 @@ pub mod pallet {
 	/// Mapping of an account id to the user data of the account.
 	#[pallet::storage]
 	#[pallet::getter(fn users)]
-	pub type Users<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, User, OptionQuery>;
+	pub type Users<T> = StorageMap<_, Blake2_128Concat, AccountIdOf<T>, User<T>, OptionQuery>;
 
 	/// Mapping of game id to the game info.
 	#[pallet::storage]
@@ -562,6 +567,8 @@ pub mod pallet {
 		NewAdminAdded { new_admin: AccountIdOf<T> },
 		/// An admin has been removed.
 		AdminRemoved { admin: AccountIdOf<T> },
+		/// The user received token.
+		TokenReceived { player: AccountIdOf<T> },
 	}
 
 	// Errors inform users that something went wrong.
@@ -608,6 +615,8 @@ pub mod pallet {
 		NotAdmin,
 		/// There are already enough admins.
 		TooManyAdmins,
+		/// The user has to wait to request token.
+		CantRequestToken,
 	}
 
 	#[pallet::hooks]
@@ -686,14 +695,18 @@ pub mod pallet {
 			let signer = ensure_signed(origin)?;
 			ensure!(Self::admins().contains(&signer), Error::<T>::NoPermission);
 			ensure!(Self::users(player.clone()).is_none(), Error::<T>::PlayerAlreadyRegistered);
+			let current_block_number = <frame_system::Pallet<T>>::block_number();
+			let next_request = current_block_number.saturating_add(<T as Config>::RequestLimit::get());
 			let user = User {
 				points: 50,
 				wins: Default::default(),
 				losses: Default::default(),
 				practise_rounds: Default::default(),
 				last_played_round: Default::default(),
+				next_token_request: next_request,
 				nfts: CollectedColors::default(),
 			};
+			<T as pallet::Config>::Currency::make_free_balance_be(&player, 10u32.try_into().map_err(|_| Error::<T>::ConversionError)?);
 			Users::<T>::insert(player.clone(), user);
 			Self::deposit_event(Event::<T>::NewPlayerRegistered { player });
 			Ok(())
@@ -978,7 +991,7 @@ pub mod pallet {
 		///
 		/// Emits `OfferHandeld` event when succesfful.
 		#[pallet::call_index(9)]
-		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::handle_offer())]
 		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
@@ -1047,7 +1060,7 @@ pub mod pallet {
 		/// - `property`: The new property that will be added.
 		/// - `price`: The price of the property that will be added.
 		#[pallet::call_index(10)]
-		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::add_property())]
 		pub fn add_property(origin: OriginFor<T>, property: PropertyInfoData<T>, price: u32) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
 			TestProperties::<T>::try_append(property.clone()).map_err(|_| Error::<T>::TooManyTest)?;
@@ -1062,7 +1075,7 @@ pub mod pallet {
 		/// Parameters:
 		/// - `id`: The id of the property that should be removed.
 		#[pallet::call_index(11)]
-		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::remove_property())]
 		pub fn remove_property(origin: OriginFor<T>, id: u32) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
 			let mut properties = TestProperties::<T>::take();
@@ -1081,7 +1094,7 @@ pub mod pallet {
 		///
 		/// Emits `NewAdminAdded` event when succesfful
 		#[pallet::call_index(12)]
-		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::add_to_admins())]
 		pub fn add_to_admins(origin: OriginFor<T>, new_admin: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
 			ensure!(
@@ -1103,7 +1116,7 @@ pub mod pallet {
 		///
 		/// Emits `UserRemoved` event when succesfful
 		#[pallet::call_index(13)]
-		#[pallet::weight(T::DbWeight::get().reads_writes(1, 1))]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::remove_from_admins())]
 		pub fn remove_from_admins(origin: OriginFor<T>, admin: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
 			ensure!(Self::admins().contains(&admin), Error::<T>::NotAdmin);
@@ -1112,6 +1125,26 @@ pub mod pallet {
 			admins.remove(index);
 			Admins::<T>::put(admins);
 			Self::deposit_event(Event::<T>::AdminRemoved { admin });
+			Ok(())
+		}
+
+		/// Lets the player request token to play.
+		///
+		/// The origin must be Signed and the sender must have sufficient funds free.
+		///
+		/// Emits `TokenReceived` event when succesfful.
+		#[pallet::call_index(14)]
+		#[pallet::weight(<T as pallet::Config>::WeightInfo::request_token())]
+		pub fn request_token(origin: OriginFor<T>) -> DispatchResult {
+			let signer = ensure_signed(origin)?;
+			let current_block_number = <frame_system::Pallet<T>>::block_number();
+			let mut user = Self::users(signer.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			ensure!(user.next_token_request < current_block_number, Error::<T>::CantRequestToken);
+			let next_request = current_block_number.saturating_add(<T as Config>::RequestLimit::get());
+			user.next_token_request = next_request;
+			<T as pallet::Config>::Currency::make_free_balance_be(&signer, 10u32.try_into().map_err(|_| Error::<T>::ConversionError)?);
+			Users::<T>::insert(signer.clone(), user);
+			Self::deposit_event(Event::<T>::TokenReceived { player: signer });
 			Ok(())
 		}
 	}
