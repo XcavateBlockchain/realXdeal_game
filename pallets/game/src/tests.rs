@@ -77,6 +77,7 @@ fn play_game_works() {
 		assert_eq!(GameModule::test_properties().len(), 4);
 		assert_ok!(GameModule::add_to_admins(RuntimeOrigin::root(), [4; 32].into()));
 		assert_ok!(GameModule::register_user(RuntimeOrigin::signed([4; 32].into()), [0; 32].into()));
+		assert_eq!(Balances::free_balance(&([0; 32].into())), 10);
 		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
 		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
@@ -743,6 +744,7 @@ fn request_token_works() {
 		assert_ok!(GameModule::register_user(RuntimeOrigin::signed([4; 32].into()), [0; 32].into()));
 		System::set_block_number(100802);
 		assert_ok!(GameModule::request_token(RuntimeOrigin::signed([0; 32].into())));
+		assert_eq!(Balances::free_balance(&([0; 32].into())), 10);
 	});
 }
 

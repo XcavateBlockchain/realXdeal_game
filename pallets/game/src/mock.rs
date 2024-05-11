@@ -159,10 +159,6 @@ pub fn new_test_ext() -> sp_io::TestExternalities {
 
 	pallet_balances::GenesisConfig::<Test> {
 		balances: vec![
-			([0; 32].into(), 1_000_000),
-			([1; 32].into(), 1_000_000),
-			([2; 32].into(), 1_000_000),
-			([3; 32].into(), 1_000_000),
 			(GameModule::account_id(), 1_000_000),
 		],
 	}
