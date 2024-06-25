@@ -64,6 +64,7 @@ use frame_system::pallet_prelude::*;
 		pub difficulty: DifficultyLevel,
 		pub player: AccountIdOf<T>,
 		pub property: PropertyInfoData<T>,
+		pub guess: Option<u32>,
 	}
 
 	/// Listing infos of a NFT.
@@ -102,14 +103,8 @@ use frame_system::pallet_prelude::*;
 	#[scale_info(skip_type_params(T))]
 	pub struct PropertyInfoData<T: Config> {
 		pub id: u32,
-		pub bedrooms: u32,
-		pub bathrooms: u32,
-		pub summary: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub property_sub_type: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub first_visible_date: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub display_size: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub display_address: BoundedVec<u8, <T as Config>::StringLimit>,
-		pub property_images1: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub data: BoundedVec<u8, <T as Config>::StringLimit>,
+		pub price: BoundedVec<u8, <T as Config>::StringLimit>,
 	}
 
 	/// Struct for the user datas.

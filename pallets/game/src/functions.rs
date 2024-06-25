@@ -45,8 +45,9 @@ impl<T: Config> Pallet<T> {
 		}
 
 		/// checks the answer and distributes the rewards accordingly.
-		pub fn check_result(difference: u16, game_id: u32) -> DispatchResult {
+		pub fn do_check_result(difference: u16, game_id: u32) -> DispatchResult {
 			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
+			ensure!(game_info.guess.is_some(), Error::<T>::NoGuess);
 			if game_info.difficulty == DifficultyLevel::Pro {
 				match difference {
 					0..=10 => {

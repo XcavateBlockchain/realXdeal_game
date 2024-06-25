@@ -1,4 +1,4 @@
-use crate::{mock::*, Error};
+use crate::{mock::*, Error, Event};
 use frame_support::{assert_noop, assert_ok};
 use sp_runtime::{traits::BadOrigin, DispatchError, ModuleError};
 use crate::PropertyInfoData;
@@ -8,7 +8,9 @@ fn practise_round(player: AccountId, game_id: u32) {
 		RuntimeOrigin::signed(player.clone()),
 		crate::DifficultyLevel::Practice,
 	));
-	assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed(player), 220000, game_id));
+	assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed(player.clone()), 220000, game_id));
+	System::assert_last_event(Event::AnswerSubmitted { player: player, game_id: game_id, guess: 220_000 }.into());
+	assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, game_id, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 }
 
 #[test]
@@ -155,6 +157,8 @@ fn submit_answer_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 223_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 223_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 223_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 80);
 		assert_ok!(GameModule::play_game(
@@ -162,6 +166,8 @@ fn submit_answer_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 2));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 2, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 2, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(1).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 180);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -187,16 +193,22 @@ fn leaderboard_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 230_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 3, guess: 230_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 230_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([1; 32].into()),
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 225_000, 4));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 4, guess: 225_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 225_000, 4, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([2; 32].into()),
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([2; 32].into()), 220_000, 5));
+		System::assert_last_event(Event::AnswerSubmitted { player: [2; 32].into(), game_id: 5, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 5, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([2; 32].into()).unwrap().points, 155);
 		assert_eq!(GameModule::users::<AccountId>([1; 32].into()).unwrap().points, 80);
@@ -236,6 +248,8 @@ fn transfer_of_nft_does_not_work() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(1).is_none(), true);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
 		assert_noop!(
@@ -268,6 +282,8 @@ fn list_nft_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(1).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -291,6 +307,8 @@ fn list_nft_doesnt_work() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(1).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -315,6 +333,8 @@ fn delist_nft_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -352,6 +372,8 @@ fn delist_nft_doesnt_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -380,6 +402,8 @@ fn make_offer_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -389,6 +413,8 @@ fn make_offer_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 3, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(RuntimeOrigin::signed([0; 32].into()), 0, 0,));
 		assert_eq!(Nfts::owner(0, 0).unwrap(), GameModule::account_id());
@@ -435,6 +461,8 @@ fn withdraw_offer_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -444,6 +472,8 @@ fn withdraw_offer_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 3, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(RuntimeOrigin::signed([0; 32].into()), 0, 0,));
 		assert_eq!(Nfts::owner(0, 0).unwrap(), GameModule::account_id());
@@ -470,6 +500,8 @@ fn withdraw_offer_fails() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -479,6 +511,8 @@ fn withdraw_offer_fails() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 3, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(RuntimeOrigin::signed([0; 32].into()), 0, 0,));
 		assert_eq!(Nfts::owner(0, 0).unwrap(), GameModule::account_id());
@@ -511,6 +545,8 @@ fn handle_offer_accept_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -520,17 +556,23 @@ fn handle_offer_accept_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 3, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 4));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 4, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 4, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 275);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 5));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 5, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 5, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().nfts.xorange, 3);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 495);
 		assert_eq!(GameModule::users::<AccountId>([1; 32].into()).unwrap().nfts.xorange, 1);
@@ -597,6 +639,8 @@ fn handle_offer_reject_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -606,6 +650,8 @@ fn handle_offer_reject_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 3, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(RuntimeOrigin::signed([0; 32].into()), 0, 0,));
 		assert_eq!(Nfts::owner(0, 0).unwrap(), GameModule::account_id());
@@ -651,6 +697,8 @@ fn handle_offer_doesnt_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, 1));
+		System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: 1, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -660,6 +708,8 @@ fn handle_offer_doesnt_works() {
 			crate::DifficultyLevel::Player,
 		));
 		assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([1; 32].into()), 220_000, 3));
+		System::assert_last_event(Event::AnswerSubmitted { player: [1; 32].into(), game_id: 3, guess: 220_000 }.into());
+		assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 220_000, 3, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		assert_eq!(Nfts::owner(0, 1).unwrap(), [1; 32].into());
 		assert_ok!(GameModule::list_nft(RuntimeOrigin::signed([0; 32].into()), 0, 0,));
 		assert_eq!(Nfts::owner(0, 0).unwrap(), GameModule::account_id());
@@ -694,6 +744,8 @@ fn play_multiple_rounds_works() {
 				217_000,
 				x
 			));
+			System::assert_last_event(Event::AnswerSubmitted { player: [0; 32].into(), game_id: x, guess: 217_000 }.into());
+			assert_ok!(GameModule::check_result(RuntimeOrigin::root(), 217_000, x, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()));
 		}
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
@@ -710,17 +762,11 @@ fn add_property_works() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		let new_property = PropertyInfoData {
-			id: 146480642,
-			bedrooms: 2,
-			bathrooms: 1,
-			summary: "Spacious apartment in the heart of New York City with a balcony and garden.".as_bytes().to_vec().try_into().unwrap(),
-			property_sub_type: "Apartment".as_bytes().to_vec().try_into().unwrap(),
-			first_visible_date: "2024-05-06T12:00:00Z".as_bytes().to_vec().try_into().unwrap(),
-			display_size: "1000 sq ft".as_bytes().to_vec().try_into().unwrap(),
-			display_address: "New York City, NY".as_bytes().to_vec().try_into().unwrap(),
-			property_images1: "https://example.com/image1.jpg".as_bytes().to_vec().try_into().unwrap(),
-		};
-		assert_ok!(GameModule::add_property(RuntimeOrigin::root(), new_property, 122565));
+			id: 147031382,
+			data: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(),
+			price: "kkjfkdjdkdjdkdjdk".as_bytes().to_vec().try_into().unwrap(),
+			};
+		assert_ok!(GameModule::add_property(RuntimeOrigin::root(), new_property));
 		assert_eq!(GameModule::test_properties().len(), 5);
 	});
 }
@@ -759,3 +805,23 @@ fn request_token_doesnt_works() {
 		assert_noop!(GameModule::request_token(RuntimeOrigin::signed([0; 32].into())), Error::<Test>::CantRequestToken);
 	});
 }
+
+#[test]
+fn check_result_fails() {
+	new_test_ext().execute_with(|| {
+		System::set_block_number(1);
+		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
+		assert_eq!(GameModule::test_properties().len(), 4);
+		assert_ok!(GameModule::add_to_admins(RuntimeOrigin::root(), [4; 32].into()));
+		assert_ok!(GameModule::register_user(RuntimeOrigin::signed([4; 32].into()), [0; 32].into()));
+		practise_round([0; 32].into(), 0);
+		assert_noop!(GameModule::check_result(RuntimeOrigin::root(), 223_000, 0, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()), Error::<Test>::NoActiveGame);
+		assert_noop!(GameModule::check_result(RuntimeOrigin::root(), 223_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()), Error::<Test>::NoActiveGame);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_noop!(GameModule::check_result(RuntimeOrigin::root(), 223_000, 1, 220_000,"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()), Error::<Test>::NoGuess);
+	});
+} 
+ 
