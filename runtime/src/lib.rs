@@ -270,6 +270,7 @@ parameter_types! {
 	pub const LeaderLimit: u32 = 10;
 	pub const MaxAdmin: u32 = 10;
 	pub const RequestLimits: BlockNumber = 100800;
+	pub const GameStringLimit: u32 = 500;
 }
 
 /// Configure the pallet-game in pallets/game.
@@ -284,7 +285,7 @@ impl pallet_game::Config for Runtime {
 	type PalletId = GamePalletId;
 	type MaxOngoingGames = MaxOngoingGame;
 	type GameRandomness = RandomnessCollectiveFlip;
-	type StringLimit = StringLimit;
+	type StringLimit = GameStringLimit;
 	type LeaderboardLimit = LeaderLimit;
 	type MaxAdmins = MaxAdmin;
 	type RequestLimit = RequestLimits;
