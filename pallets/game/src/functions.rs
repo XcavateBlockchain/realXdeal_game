@@ -63,7 +63,7 @@ impl<T: Config> Pallet<T> {
 						)
 						.ok_or(Error::<T>::ArithmeticOverflow)?;
 					let collection_id: <T as pallet::Config>::CollectionId = random_number.into();
-					let next_item_id = Self::next_color_id(collection_id);
+					let next_item_id = NextColorId::<T>::get(collection_id);
 					let item_id: ItemId<T> = next_item_id.into();
 					let next_item_id =
 						next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
@@ -167,7 +167,7 @@ impl<T: Config> Pallet<T> {
 						)
 						.ok_or(Error::<T>::ArithmeticOverflow)?;
 					let collection_id: <T as pallet::Config>::CollectionId = random_number.into();
-					let next_item_id = Self::next_color_id(collection_id);
+					let next_item_id = NextColorId::<T>::get(collection_id);
 					let item_id: ItemId<T> = next_item_id.into();
 					let next_item_id =
 						next_item_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;

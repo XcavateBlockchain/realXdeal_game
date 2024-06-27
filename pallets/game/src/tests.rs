@@ -100,7 +100,7 @@ fn play_game_works() {
 			[0; 32].into()
 		));
 		assert_eq!(Balances::free_balance(&([0; 32].into())), 10);
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into(), 100));
 		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
@@ -322,7 +322,7 @@ fn transfer_of_nft_does_not_work() {
 			RuntimeOrigin::signed([4; 32].into()),
 			[0; 32].into()
 		));
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into(), 100));
 		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
@@ -590,7 +590,7 @@ fn make_offer_doesnt_works() {
 			RuntimeOrigin::signed([4; 32].into()),
 			[0; 32].into()
 		));
-		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into()));
+		assert_ok!(GameModule::give_points(RuntimeOrigin::root(), [0; 32].into(), 100));
 		practise_round([0; 32].into(), 0);
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([0; 32].into()),
