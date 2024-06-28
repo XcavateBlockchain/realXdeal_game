@@ -223,7 +223,9 @@ pub mod pallet {
 		/// An answer has been submitted.
 		AnswerSubmitted { player: AccountIdOf<T>, game_id: u32, guess: u32 },
 		/// The result has been checked.
-		ResultChecked { game_id: u32 },
+		ResultChecked { game_id: u32, secret: BoundedVec<u8, <T as Config>::StringLimit>, points: u32, won: bool },
+		/// No Answer has been submitted.
+		NoAnswer { game_id: u32, points: u32 },
 		/// A nft has been listed.
 		NftListed { owner: AccountIdOf<T>, collection_id: CollectionId<T>, item_id: ItemId<T> },
 		/// A nft has been delisted.
@@ -311,7 +313,7 @@ pub mod pallet {
 				let game_info = <GameInfo<T>>::take(index);
 				if let Some(game_info) = game_info {
 					if game_info.guess.is_none() {
-						let _ = Self::no_answer_result(game_info);
+						let _ = Self::no_answer_result(game_info, *index);
 					} else {
 						GameInfo::<T>::insert(index, game_info);
 					}
@@ -411,9 +413,14 @@ pub mod pallet {
 		/// Emits `LocationCreated` event when succesfful.
 		#[pallet::call_index(2)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::give_points())]
-		pub fn give_points(origin: OriginFor<T>, receiver: AccountIdOf<T>, amount: u32) -> DispatchResult {
+		pub fn give_points(
+			origin: OriginFor<T>,
+			receiver: AccountIdOf<T>,
+			amount: u32,
+		) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
-			let mut user = Users::<T>::get(receiver.clone()).ok_or(Error::<T>::UserNotRegistered)?;
+			let mut user =
+				Users::<T>::get(receiver.clone()).ok_or(Error::<T>::UserNotRegistered)?;
 			user.points = user.points.checked_add(amount).ok_or(Error::<T>::ArithmeticOverflow)?;
 			Users::<T>::insert(receiver.clone(), user);
 			Self::deposit_event(Event::<T>::PointsReceived { receiver, amount: 100 });
@@ -551,7 +558,7 @@ pub mod pallet {
 		/// - `secret`: The secret to decrypt the price and property data.
 		///
 		/// Emits `ResultChecked` event when succesfful.
-		#[pallet::call_index(15)]
+		#[pallet::call_index(5)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::check_result())]
 		pub fn check_result(
 			origin: OriginFor<T>,
@@ -572,8 +579,8 @@ pub mod pallet {
 			Self::do_check_result(
 				difference_value.try_into().map_err(|_| Error::<T>::ConversionError)?,
 				game_id,
+				secret,
 			)?;
-			Self::deposit_event(Event::<T>::ResultChecked { game_id });
 			Ok(())
 		}
 
@@ -586,7 +593,7 @@ pub mod pallet {
 		/// - `item_id`: The item id of the nft that will be listed.
 		///
 		/// Emits `NftListed` event when succesfful.
-		#[pallet::call_index(5)]
+		#[pallet::call_index(6)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::list_nft())]
 		pub fn list_nft(
 			origin: OriginFor<T>,
@@ -629,7 +636,7 @@ pub mod pallet {
 		/// - `listing_id`: The listing id of the listing.
 		///
 		/// Emits `NftDelisted` event when succesfful.
-		#[pallet::call_index(6)]
+		#[pallet::call_index(7)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::delist_nft())]
 		pub fn delist_nft(origin: OriginFor<T>, listing_id: u32) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
@@ -666,7 +673,7 @@ pub mod pallet {
 		/// - `item_id`: The item id of the nft that will be offered.
 		///
 		/// Emits `OfferMade` event when succesfful.
-		#[pallet::call_index(7)]
+		#[pallet::call_index(8)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::make_offer())]
 		pub fn make_offer(
 			origin: OriginFor<T>,
@@ -712,7 +719,7 @@ pub mod pallet {
 		/// - `offer_id`: The id of the offer.
 		///
 		/// Emits `OfferWithdrawn` event when succesfful.
-		#[pallet::call_index(8)]
+		#[pallet::call_index(9)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::make_offer())]
 		pub fn withdraw_offer(origin: OriginFor<T>, offer_id: u32) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
@@ -744,13 +751,13 @@ pub mod pallet {
 		/// - `offer`: Must be either Accept or Reject.
 		///
 		/// Emits `OfferHandeld` event when succesfful.
-		#[pallet::call_index(9)]
+		#[pallet::call_index(10)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::handle_offer())]
 		pub fn handle_offer(origin: OriginFor<T>, offer_id: u32, offer: Offer) -> DispatchResult {
 			let signer = ensure_signed(origin.clone())?;
 			let offer_details = Offers::<T>::take(offer_id).ok_or(Error::<T>::OfferDoesNotExist)?;
-			let listing_details =
-				Listings::<T>::get(offer_details.listing_id).ok_or(Error::<T>::ListingDoesNotExist)?;
+			let listing_details = Listings::<T>::get(offer_details.listing_id)
+				.ok_or(Error::<T>::ListingDoesNotExist)?;
 			ensure!(listing_details.owner == signer, Error::<T>::NoPermission);
 			let pallet_origin: OriginFor<T> = RawOrigin::Signed(Self::account_id()).into();
 			if offer == Offer::Accept {
@@ -813,7 +820,7 @@ pub mod pallet {
 		/// Parameters:
 		/// - `property`: The new property that will be added.
 		/// - `price`: The price of the property that will be added.
-		#[pallet::call_index(10)]
+		#[pallet::call_index(11)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::add_property())]
 		pub fn add_property(origin: OriginFor<T>, property: PropertyInfoData<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
@@ -828,7 +835,7 @@ pub mod pallet {
 		///
 		/// Parameters:
 		/// - `id`: The id of the property that should be removed.
-		#[pallet::call_index(11)]
+		#[pallet::call_index(12)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::remove_property())]
 		pub fn remove_property(origin: OriginFor<T>, id: u32) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
@@ -846,7 +853,7 @@ pub mod pallet {
 		/// - `new_admin`: The address of the new account added to the list.
 		///
 		/// Emits `NewAdminAdded` event when succesfful
-		#[pallet::call_index(12)]
+		#[pallet::call_index(13)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::add_to_admins())]
 		pub fn add_to_admins(origin: OriginFor<T>, new_admin: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
@@ -864,7 +871,7 @@ pub mod pallet {
 		/// - `admin`: The address of the admin removed from the admins.
 		///
 		/// Emits `UserRemoved` event when succesfful
-		#[pallet::call_index(13)]
+		#[pallet::call_index(14)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::remove_from_admins())]
 		pub fn remove_from_admins(origin: OriginFor<T>, admin: AccountIdOf<T>) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
@@ -882,7 +889,7 @@ pub mod pallet {
 		/// The origin must be Signed and the sender must have sufficient funds free.
 		///
 		/// Emits `TokenReceived` event when succesfful.
-		#[pallet::call_index(14)]
+		#[pallet::call_index(15)]
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::request_token())]
 		pub fn request_token(origin: OriginFor<T>) -> DispatchResult {
 			let signer = ensure_signed(origin)?;
