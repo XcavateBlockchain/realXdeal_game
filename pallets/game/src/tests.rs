@@ -210,7 +210,7 @@ fn submit_answer_works() {
 			220_000,
 			"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
 		));
-		System::assert_last_event(Event::ResultChecked { game_id: 1, secret: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(), points: 25, won: true }.into());
+		System::assert_last_event(Event::ResultChecked { game_id: 1, secret: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(), points: 25, won: true, nft_received: false }.into());
 		assert_eq!(GameModule::game_info(0).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 80);
 		assert_ok!(GameModule::play_game(
@@ -228,7 +228,7 @@ fn submit_answer_works() {
 			220_000,
 			"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
 		));
-		System::assert_last_event(Event::ResultChecked { game_id: 2, secret: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(), points: 100, won: true }.into());
+		System::assert_last_event(Event::ResultChecked { game_id: 2, secret: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(), points: 100, won: true, nft_received: true }.into());
 		assert_eq!(GameModule::game_info(1).is_none(), true);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 180);
 		assert_eq!(Nfts::owner(0, 0).unwrap(), [0; 32].into());
@@ -334,7 +334,7 @@ fn leaderboard_works() {
 			220_000,
 			"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
 		));
-		System::assert_last_event(Event::ResultChecked { game_id: 3, secret: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(), points: 15, won: true }.into());
+		System::assert_last_event(Event::ResultChecked { game_id: 3, secret: "nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap(), points: 15, won: true, nft_received: false }.into());
 		assert_ok!(GameModule::play_game(
 			RuntimeOrigin::signed([1; 32].into()),
 			crate::DifficultyLevel::Player,

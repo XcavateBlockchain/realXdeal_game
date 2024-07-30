@@ -223,7 +223,7 @@ pub mod pallet {
 		/// An answer has been submitted.
 		AnswerSubmitted { player: AccountIdOf<T>, game_id: u32, guess: u32 },
 		/// The result has been checked.
-		ResultChecked { game_id: u32, secret: BoundedVec<u8, <T as Config>::StringLimit>, points: u32, won: bool },
+		ResultChecked { game_id: u32, secret: BoundedVec<u8, <T as Config>::StringLimit>, points: u32, won: bool, nft_received: bool },
 		/// No Answer has been submitted.
 		NoAnswer { game_id: u32, points: u32 },
 		/// A nft has been listed.
@@ -395,7 +395,7 @@ pub mod pallet {
 			};
 			<T as pallet::Config>::Currency::make_free_balance_be(
 				&player,
-				10u32.try_into().map_err(|_| Error::<T>::ConversionError)?,
+				10000000000000u64.try_into().map_err(|_| Error::<T>::ConversionError)?,
 			);
 			Users::<T>::insert(player.clone(), user);
 			frame_system::Pallet::<T>::inc_providers(&player);
@@ -893,7 +893,7 @@ pub mod pallet {
 			user.next_token_request = next_request;
 			<T as pallet::Config>::Currency::make_free_balance_be(
 				&signer,
-				10u32.try_into().map_err(|_| Error::<T>::ConversionError)?,
+				10000000000000u64.try_into().map_err(|_| Error::<T>::ConversionError)?,
 			);
 			Users::<T>::insert(signer.clone(), user);
 			Self::deposit_event(Event::<T>::TokenReceived { player: signer });
