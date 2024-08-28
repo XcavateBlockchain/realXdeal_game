@@ -249,6 +249,22 @@ fn submit_answer_works() {
 			"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
 		));
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 155);
+		for x in 4..8 {
+			assert_ok!(GameModule::play_game(
+				RuntimeOrigin::signed([0; 32].into()),
+				crate::DifficultyLevel::Player,
+			));
+			assert_ok!(GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 220_000, x));
+			assert_ok!(GameModule::check_result(
+				RuntimeOrigin::root(),
+				220_000,
+				x,
+				220_000,
+				"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
+			));
+		}
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().nfts.xorange, 5);
+		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 835);
 	});
 }
 

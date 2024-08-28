@@ -395,7 +395,7 @@ pub mod pallet {
 			};
 			<T as pallet::Config>::Currency::make_free_balance_be(
 				&player,
-				10000000000000u64.try_into().map_err(|_| Error::<T>::ConversionError)?,
+				/*10000000000000 */10u64.try_into().map_err(|_| Error::<T>::ConversionError)?,
 			);
 			Users::<T>::insert(player.clone(), user);
 			frame_system::Pallet::<T>::inc_providers(&player);
@@ -893,7 +893,7 @@ pub mod pallet {
 			user.next_token_request = next_request;
 			<T as pallet::Config>::Currency::make_free_balance_be(
 				&signer,
-				10000000000000u64.try_into().map_err(|_| Error::<T>::ConversionError)?,
+				/* 10000000000000 */10u64.try_into().map_err(|_| Error::<T>::ConversionError)?,
 			);
 			Users::<T>::insert(signer.clone(), user);
 			Self::deposit_event(Event::<T>::TokenReceived { player: signer });
