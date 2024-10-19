@@ -554,18 +554,18 @@ pub mod pallet {
 		#[pallet::weight(<T as pallet::Config>::WeightInfo::check_result())]
 		pub fn check_result(
 			origin: OriginFor<T>,
-			guess: u32,
+			guess: u64,
 			game_id: u32,
-			price: u32,
+			price: u64,
 			secret: BoundedVec<u8, <T as Config>::StringLimit>,
 		) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
-			let difference_value = ((price as i32)
-				.checked_sub(guess as i32)
+			let difference_value = ((price as i64)
+				.checked_sub(guess as i64)
 				.ok_or(Error::<T>::ArithmeticUnderflow)?)
 			.checked_mul(1000)
 			.ok_or(Error::<T>::MultiplyError)?
-			.checked_div(price as i32)
+			.checked_div(price as i64)
 			.ok_or(Error::<T>::DivisionError)?
 			.abs();
 			Self::do_check_result(
