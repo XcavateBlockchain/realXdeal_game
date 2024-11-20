@@ -191,16 +191,6 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
-	/// Stores the game keys and round types ending on a given block.
-	#[pallet::storage]
-	pub type GamesExpiring<T: Config> = StorageMap<
-		_,
-		Blake2_128Concat,
-		BlockNumberFor<T>,
-		BoundedVec<u32, T::MaxOngoingGames>,
-		ValueQuery,
-	>;
-
 	/// A List of test properties
 	#[pallet::storage]
 	#[pallet::getter(fn game_properties)]
@@ -219,7 +209,7 @@ pub mod pallet {
 		/// A user has received points.
 		PointsReceived { receiver: AccountIdOf<T>, amount: u32 },
 		/// A game has started.
-		GameStarted { player: AccountIdOf<T>, game_id: u32, ending_block: BlockNumberFor<T> },
+		GameStarted { player: AccountIdOf<T>, game_id: u32 },
 		/// An answer has been submitted.
 		AnswerSubmitted { player: AccountIdOf<T>, game_id: u32, guess: u32 },
 		/// The result has been checked.
@@ -299,28 +289,6 @@ pub mod pallet {
 		CantRequestToken,
 		/// There has been no guess from the player.
 		NoGuess,
-	}
-
-	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		fn on_initialize(n: frame_system::pallet_prelude::BlockNumberFor<T>) -> Weight {
-			let mut weight = T::DbWeight::get().reads_writes(1, 1);
-			let ended_games = GamesExpiring::<T>::take(n);
-
-			// Checks if there is a voting for a loan expiring in this block.
-			ended_games.iter().for_each(|index| {
-				weight = weight.saturating_add(T::DbWeight::get().reads_writes(1, 1));
-				let game_info = <GameInfo<T>>::take(index);
-				if let Some(game_info) = game_info {
-					if game_info.guess.is_none() {
-						let _ = Self::no_answer_result(game_info, *index);
-					} else {
-						GameInfo::<T>::insert(index, game_info);
-					}
-				}
-			});
-			weight
-		}
 	}
 
 	#[pallet::call]
@@ -473,21 +441,6 @@ pub mod pallet {
 				Users::<T>::insert(signer.clone(), user);
 			}
 			let game_id = GameId::<T>::get();
-			let current_block_number = <frame_system::Pallet<T>>::block_number();
-    
-			// Determine expiry block based on game type
-			let expiry_block = if game_type == DifficultyLevel::Player {
-				current_block_number.saturating_add(8u32.into())
-			} else if game_type == DifficultyLevel::Pro {
-				current_block_number.saturating_add(5u32.into())
-			} else {
-				current_block_number.saturating_add(10u32.into())
-			};
-		
-			GamesExpiring::<T>::try_mutate(expiry_block, |keys| {
-				keys.try_push(game_id).map_err(|_| Error::<T>::TooManyGames)?;
-				Ok::<(), DispatchError>(())
-			})?;
 			
 			let (hashi, _) = T::GameRandomness::random(&[(game_id % 256) as u8]);
 			let u32_value = u32::from_le_bytes(
@@ -504,7 +457,7 @@ pub mod pallet {
 			let next_game_id = game_id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
 			GameId::<T>::put(next_game_id);
 			// Submit the encrypted property data and delete the price
-			Self::deposit_event(Event::<T>::GameStarted { player: signer, game_id, ending_block: expiry_block });
+			Self::deposit_event(Event::<T>::GameStarted { player: signer, game_id });
 			Ok(())
 		}
 
@@ -560,19 +513,25 @@ pub mod pallet {
 			secret: BoundedVec<u8, <T as Config>::StringLimit>,
 		) -> DispatchResult {
 			T::GameOrigin::ensure_origin(origin)?;
-			let difference_value = ((price as i64)
-				.checked_sub(guess as i64)
-				.ok_or(Error::<T>::ArithmeticUnderflow)?)
-			.checked_mul(1000)
-			.ok_or(Error::<T>::MultiplyError)?
-			.checked_div(price as i64)
-			.ok_or(Error::<T>::DivisionError)?
-			.abs();
-			Self::do_check_result(
-				difference_value.try_into().map_err(|_| Error::<T>::ConversionError)?,
-				game_id,
-				secret,
-			)?;
+			let game_info = GameInfo::<T>::take(game_id).ok_or(Error::<T>::NoActiveGame)?;
+			if game_info.guess.is_none() {
+				Self::no_answer_result(game_info, game_id)?;
+			} else {
+				let difference_value = ((price as i64)
+					.checked_sub(guess as i64)
+					.ok_or(Error::<T>::ArithmeticUnderflow)?)
+					.checked_mul(1000)
+					.ok_or(Error::<T>::MultiplyError)?
+					.checked_div(price as i64)
+					.ok_or(Error::<T>::DivisionError)?
+					.abs();
+				Self::do_check_result(
+					difference_value.try_into().map_err(|_| Error::<T>::ConversionError)?,
+					game_id,
+					game_info,
+					secret,
+				)?;
+			}
 			Ok(())
 		}
 

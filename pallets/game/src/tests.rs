@@ -301,7 +301,7 @@ fn submit_answer_works_with_high_difference() {
 	});
 }
 
-#[test]
+/* #[test]
 fn game_expires_works() {
 	new_test_ext().execute_with(|| {
 		System::set_block_number(1);
@@ -344,7 +344,7 @@ fn game_expires_works() {
 		System::assert_last_event(Event::NoAnswer { game_id: 3, points: 50 }.into());
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 5);
 	});
-}
+} */
 
 #[test]
 fn leaderboard_works() {
@@ -433,8 +433,29 @@ fn submit_answer_fails() {
 		System::set_block_number(1);
 		assert_ok!(GameModule::setup_game(RuntimeOrigin::root()));
 		assert_eq!(GameModule::game_properties().len(), 4);
+		assert_ok!(GameModule::add_to_admins(RuntimeOrigin::root(), [4; 32].into()));
+		assert_ok!(GameModule::register_user(
+			RuntimeOrigin::signed([4; 32].into()),
+			[0; 32].into()
+		));
+		practise_round([0; 32].into(), 0);
 		assert_noop!(
-			GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 223_000, 0),
+			GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 223_000, 1),
+			Error::<Test>::NoActiveGame
+		);
+		assert_ok!(GameModule::play_game(
+			RuntimeOrigin::signed([0; 32].into()),
+			crate::DifficultyLevel::Player,
+		));
+		assert_ok!(GameModule::check_result(
+			RuntimeOrigin::root(),
+			230_000,
+			1,
+			220_000,
+			"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
+		));
+		assert_noop!(
+			GameModule::submit_answer(RuntimeOrigin::signed([0; 32].into()), 230_000, 1),
 			Error::<Test>::NoActiveGame
 		);
 	});
@@ -996,9 +1017,16 @@ fn handle_offer_accept_works() {
 			crate::DifficultyLevel::Player,
 		));
 		System::assert_last_event(
-			Event::GameStarted { player: [0; 32].into(), game_id: 6, ending_block: 9 }.into(),
+			Event::GameStarted { player: [0; 32].into(), game_id: 6 }.into(),
 		);
 		run_to_block(20);
+		assert_ok!(GameModule::check_result(
+			RuntimeOrigin::root(),
+			220_000,
+			6,
+			220_000,
+			"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
+		));
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().nfts.xorange, 3);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().points, 470);
 		assert_eq!(GameModule::users::<AccountId>([0; 32].into()).unwrap().wins, 3);
@@ -1286,20 +1314,6 @@ fn check_result_fails() {
 				"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
 			),
 			Error::<Test>::NoActiveGame
-		);
-		assert_ok!(GameModule::play_game(
-			RuntimeOrigin::signed([0; 32].into()),
-			crate::DifficultyLevel::Player,
-		));
-		assert_noop!(
-			GameModule::check_result(
-				RuntimeOrigin::root(),
-				223_000,
-				1,
-				220_000,
-				"nfdjakl;fueif;janf,dnfm,dhfhfdksks".as_bytes().to_vec().try_into().unwrap()
-			),
-			Error::<Test>::NoGuess
 		);
 	});
 }
